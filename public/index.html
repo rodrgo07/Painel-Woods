@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Painel Woods</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238e1b1b'/%3E%3Cpath d='M7 10l3.5 12L16 12l5.5 10L25 10' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <script>try { const t = localStorage.getItem('tema'); if (t) document.documentElement.dataset.tema = t; } catch {}</script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <aside class="lateral">
+    <a class="marca" href="#/">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M7 10l3.5 12L16 12l5.5 10L25 10"/></svg>
+      <span>Woods</span>
+    </a>
+    <a class="btn primario largo" href="#/novo">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Novo lead
+    </a>
+    <input id="busca" type="search" placeholder="Buscar lead" aria-label="Buscar lead">
+    <nav id="lista" aria-label="Leads"></nav>
+    <p id="aviso-login" class="aviso" hidden>Sem login do Claude. Rode <code>claude.exe auth login</code> (veja o README) ou coloque <code>ANTHROPIC_API_KEY</code> no <code>.env</code>.</p>
+    <footer class="rodape">
+      <span id="claude-status" class="claude-status">Claude livre</span>
+      <button id="tema" class="icone" type="button" aria-label="Alternar tema claro e escuro" title="Tema">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" class="cheio"/></svg>
+      </button>
+    </footer>
+  </aside>
+
+  <main>
+    <section id="tela-novo" class="tela-novo" hidden>
+      <form id="form-novo" class="cartao" autocomplete="off">
+        <h1>Novo lead</h1>
+        <p class="suave">Mande o nome e o Instagram. O Claude pesquisa o Google e o Instagram, monta as variantes A e B e gera os prints para aprovação.</p>
+        <label>Nome do negócio<input name="nome" required placeholder="Recanto Pet"></label>
+        <label>Instagram<input name="instagram" required placeholder="@recantopet ou link do perfil"></label>
+        <div class="linha">
+          <label>Cidade<input name="cidade" placeholder="Jundiaí"></label>
+          <label>Responsável
+            <select name="responsavel"><option>R Host</option><option>L Host</option></select>
+          </label>
+        </div>
+        <label>Slug<input name="slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="recanto-pet" title="Minúsculas, sem acento, com hífen"></label>
+        <label><span>Observações <span class="suave">(opcional)</span></span><textarea name="obs" rows="3" placeholder="Link do Google Meu Negócio, serviço em destaque, algo a evitar…"></textarea></label>
+        <button class="btn primario largo" type="submit">Criar e gerar sites</button>
+      </form>
+    </section>
+
+    <section id="tela-lead" class="tela-lead" hidden>
+      <header class="topo">
+        <div class="titulo">
+          <h1 id="lead-nome"></h1>
+          <p id="lead-meta" class="suave"></p>
+        </div>
+        <div id="lead-acoes" class="acoes"></div>
+      </header>
+
+      <div class="corpo">
+        <div class="palco">
+          <div class="barra">
+            <div class="seg" id="vistas" role="group" aria-label="Ver">
+              <button type="button" data-vista="a">Variante A</button>
+              <button type="button" data-vista="b">Variante B</button>
+              <button type="button" data-vista="prints">Prints</button>
+              <button type="button" data-vista="ficha">Ficha</button>
+            </div>
+            <div class="barra-dir">
+              <div class="seg" id="aparelhos" role="group" aria-label="Tamanho">
+                <button type="button" data-aparelho="celular" title="Celular (390 px)">Celular</button>
+                <button type="button" data-aparelho="desktop" title="Desktop (1440 px)">Desktop</button>
+              </div>
+              <a id="abrir" class="icone" target="_blank" rel="noopener" title="Abrir em nova aba" aria-label="Abrir em nova aba">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+              </a>
+              <button id="recarregar" class="icone" type="button" title="Recarregar" aria-label="Recarregar">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
+              </button>
+            </div>
+          </div>
+          <div id="palco" class="palco-conteudo"></div>
+        </div>
+
+        <div class="conversa">
+          <div class="conversa-topo">
+            <span>Claude</span>
+            <span id="trabalhando" class="trabalhando" hidden><i></i><i></i><i></i> trabalhando</span>
+          </div>
+          <div id="log" class="log" aria-live="polite"></div>
+          <div id="atalhos" class="atalhos">
+            <button type="button" class="chip" data-texto="Continue o fluxo de onde parou.">Continuar o fluxo</button>
+            <button type="button" class="chip" data-texto="Rode o build e os prints de novo.">Refazer build e prints</button>
+          </div>
+          <form id="enviar" class="enviar">
+            <textarea id="msg" rows="2" placeholder="Peça um ajuste ou responda o Claude…" aria-label="Mensagem para o Claude"></textarea>
+            <div class="enviar-acoes">
+              <button id="parar" class="btn" type="button" hidden>Parar</button>
+              <button id="mandar" class="btn primario" type="submit">Enviar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
