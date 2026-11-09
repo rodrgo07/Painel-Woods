@@ -3,20 +3,21 @@ import { slugar } from './util.js';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const lembrar = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { return null; } };
+const SITE = 'painel://site'; // prévia e prints dos leads, servidos pelo app em outra origem
 
 const estado = {
-  leads: [], rodando: null, atual: null, lead: null, fonte: null, rodandoAqui: false,
+  sit: null, // situação geral vinda do app: o que falta, configurações, leads
+  leads: [], rodando: null, atual: null, lead: null, aoVivo: null, rodandoAqui: false,
   vista: lembrar('vista') || 'a', aparelho: lembrar('aparelho') || 'celular',
+  checagem: null, github: false,
 };
 
 // ---------- Utilidades ----------
-async function api(url, dados) {
-  const r = await fetch(url, dados === undefined ? {} : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.erro || `Erro ${r.status}`);
-  return j;
+/** Pede uma ação ao app (window.painel vem do preload) */
+async function api(acao, dados) {
+  const r = await window.painel.pedir(acao, dados);
+  if (r.erro) throw new Error(r.erro);
+  return r.ok;
 }
 
 let toastTimer;
@@ -29,6 +30,8 @@ function toast(msg) {
 }
 
 const pill = (status) => (status ? `<span class="pill" data-status="${esc(status)}">${esc(status)}</span>` : '');
+const TELAS = ['#tela-config', '#tela-novo', '#tela-lead'];
+const mostrar = (qual) => TELAS.forEach((t) => { $(t).hidden = t !== qual; });
 
 // Markdown mínimo das respostas do Claude
 const md = (t) => esc(t)
@@ -37,21 +40,17 @@ const md = (t) => esc(t)
   .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
   .replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
 
-// ---------- Tema ----------
-$('#tema').onclick = () => {
-  const raiz = document.documentElement;
-  const atual = raiz.dataset.tema || 'dark';
-  raiz.dataset.tema = atual === 'dark' ? 'light' : 'dark';
-  lembrar('tema', raiz.dataset.tema);
-};
-
 // ---------- Lista de leads ----------
 async function carregarLista() {
-  const j = await api('/api/leads');
-  estado.leads = j.leads;
-  estado.rodando = j.rodando;
-  $('#aviso-login').hidden = j.temLogin;
+  const s = estado.sit = await api('inicio');
+  estado.leads = s.leads;
+  estado.rodando = s.rodando;
+  const aviso = $('#aviso');
+  aviso.hidden = !s.falta.length && !s.novidades;
+  aviso.textContent = s.falta.length ? 'Configuração incompleta. Abrir as configurações.'
+    : `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`}. Abrir as configurações.`;
   desenharLista();
+  if (!$('#tela-config').hidden) desenharConfig();
 }
 
 function desenharLista() {
@@ -68,15 +67,145 @@ function desenharLista() {
 }
 $('#busca').oninput = desenharLista;
 
-// ---------- Rotas: #/novo e #/lead/<slug> ----------
+// ---------- Rotas: #/config, #/novo e #/lead/<slug> ----------
 function rota() {
   const [, tipo, slug] = location.hash.split('/');
-  estado.fonte?.close();
-  estado.fonte = null;
-  if (tipo === 'lead' && slug) abrirLead(decodeURIComponent(slug));
+  estado.aoVivo = null;
+  // Primeira execução (ou algo quebrou): só as configurações, até não faltar nada
+  if (tipo !== 'config' && estado.sit?.falta.length) { location.hash = '#/config'; return; }
+  if (tipo === 'config') mostrarConfig();
+  else if (tipo === 'lead' && slug) abrirLead(decodeURIComponent(slug));
   else mostrarNovo();
 }
 window.addEventListener('hashchange', rota);
+
+// ---------- Configurações e primeira execução ----------
+function mostrarConfig() {
+  estado.atual = null;
+  desenharLista();
+  mostrar('#tela-config');
+  const c = estado.sit.config;
+  $('#c-modelo').innerHTML = estado.sit.modelos.map((m) => `<option>${esc(m)}</option>`).join('');
+  $('#c-modelo').value = c.modelo;
+  $('#c-navegador').value = c.navegador;
+  $('#c-git-nome').value = c.gitNome;
+  $('#c-git-email').value = c.gitEmail;
+  desenharConfig();
+  checar();
+}
+
+async function checar() {
+  estado.checagem = await api('checar').catch(() => null);
+  desenharConfig();
+}
+
+function passo(id, feito) {
+  $(id).classList.toggle('feito', feito);
+  $(`${id} .situacao`).textContent = feito ? 'pronto' : 'pendente';
+}
+
+function desenharConfig() {
+  const s = estado.sit;
+  const k = estado.checagem;
+  $('#config-titulo').textContent = s.falta.length ? 'Bem-vindo ao Painel Woods' : 'Configurações';
+  $('#config-sub').textContent = s.falta.length ? `Falta: ${s.falta.join('; ')}.` : `Tudo pronto. Versão ${s.versao}.`;
+
+  const itens = [[Boolean(s.navegador), s.navegador ? `Navegador: ${s.navegador}` : 'Sem Chrome nem Edge. Baixe o Chromium no botão abaixo.']];
+  if (k) {
+    itens.push([k.internet, k.internet ? 'Internet funcionando' : 'Sem acesso ao github.com'],
+      [k.livreGb >= 2, `${k.livreGb} GB livres no disco${k.livreGb >= 2 ? '' : ' (o painel precisa de 2 GB)'}`]);
+  }
+  $('#checagens').innerHTML = itens.map(([ok, t]) => `<li class="${ok ? 'ok' : 'ruim'}">${esc(t)}</li>`).join('')
+    + (k ? '' : '<li class="suave">Verificando internet e disco…</li>');
+  $('#b-chromium').hidden = Boolean(s.navegador);
+  passo('#p-pc', itens.every(([ok]) => ok));
+
+  passo('#p-github', s.clonado || estado.github);
+
+  passo('#p-woods', s.clonado && s.deps);
+  $('#e-woods').textContent = !s.clonado ? `Vai ser baixado em ${s.pasta}`
+    : !s.deps ? 'Baixado. Faltam as dependências (npm).'
+    : `Em ${s.pasta}${s.novidades ? `. Há ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`} no GitHub.` : ''}`;
+  $('#b-woods').hidden = s.clonado && s.deps;
+  $('#b-woods').textContent = s.clonado ? 'Instalar as dependências' : 'Baixar o WOODS';
+  $('#b-atualizar').hidden = !s.clonado;
+
+  passo('#p-claude', s.temLogin);
+  $('#e-claude').textContent = s.temChave ? 'Usando a chave da API guardada no cofre do Windows.'
+    : s.temLogin ? 'Conta do Claude conectada.'
+    : 'Entre com a conta do Claude (abre uma janela de terminal e o navegador) ou use uma chave da API.';
+  $('#b-sem-chave').hidden = !s.temChave;
+  $('[data-acao="loginClaude"]').classList.toggle('primario', !s.temLogin);
+
+  passo('#p-git', Boolean(s.config.gitNome && s.config.gitEmail));
+  $('#config-pronto').hidden = Boolean(s.falta.length);
+}
+
+/** Barra de progresso das tarefas longas. Erro fica na tela até a próxima ação */
+function progresso(ev) {
+  const p = $('#progresso');
+  if (ev.fim) { if (!p.classList.contains('erro')) p.hidden = true; return; }
+  p.hidden = false;
+  p.classList.toggle('erro', Boolean(ev.erro));
+  $('#prog-titulo').textContent = ev.titulo;
+  $('#prog-linha').textContent = ev.linha || '';
+  const barra = $('#prog-barra');
+  barra.hidden = Boolean(ev.erro);
+  if (ev.pct >= 0) barra.value = ev.pct; else barra.removeAttribute('value'); // sem valor: barra indeterminada
+}
+
+const FEITO = {
+  github: 'Acesso ao GitHub confirmado.', baixarWoods: 'WOODS pronto.', baixarChromium: 'Chromium baixado.',
+  loginClaude: 'Termine o login na janela que abriu. O painel percebe sozinho.', removerChave: 'Chave removida.',
+};
+$('#tela-config').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-acao]');
+  if (!b) return;
+  const acao = b.dataset.acao;
+  b.disabled = true;
+  $('#progresso').hidden = true;
+  $('#progresso').classList.remove('erro');
+  try {
+    if (acao === 'checar') { estado.checagem = null; desenharConfig(); await checar(); return; }
+    const r = await api(acao === 'removerChave' ? 'salvarChave' : acao, {});
+    if (acao === 'github') estado.github = true;
+    if (acao === 'atualizar') toast(r.commits ? `WOODS atualizado: ${r.commits === 1 ? '1 commit novo' : `${r.commits} commits novos`}.` : 'O WOODS já estava atualizado.');
+    else if (acao === 'importar' && r.importadas >= 0) toast(r.importadas ? `${r.importadas} conversas importadas.` : 'Nenhuma conversa nova nessa pasta.');
+    else if (FEITO[acao]) toast(FEITO[acao]);
+  } catch (err) {
+    progresso({ erro: true, titulo: 'Não deu certo', linha: err.message });
+  } finally {
+    b.disabled = false;
+    await carregarLista().catch(() => {});
+  }
+});
+
+async function salvarConfig(dados, aviso) {
+  try {
+    await api('salvarConfig', dados);
+    await carregarLista();
+    if (aviso) toast(aviso);
+  } catch (err) {
+    toast(err.message);
+  }
+}
+$('#c-modelo').onchange = (e) => salvarConfig({ modelo: e.target.value }, 'Modelo salvo.');
+$('#c-navegador').onchange = (e) => salvarConfig({ navegador: e.target.value }, 'Navegador salvo.');
+$('#p-git').onsubmit = (e) => {
+  e.preventDefault();
+  salvarConfig({ gitNome: $('#c-git-nome').value, gitEmail: $('#c-git-email').value }, 'Assinatura salva.');
+};
+$('#form-chave').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    await api('salvarChave', { chave: $('#c-chave').value });
+    $('#c-chave').value = '';
+    await carregarLista();
+    toast('Chave guardada no cofre do Windows.');
+  } catch (err) {
+    toast(err.message);
+  }
+};
 
 // ---------- Novo lead ----------
 const form = $('#form-novo');
@@ -85,8 +214,7 @@ let slugManual = false;
 function mostrarNovo() {
   estado.atual = null;
   desenharLista();
-  $('#tela-lead').hidden = true;
-  $('#tela-novo').hidden = false;
+  mostrar('#tela-novo');
   form.reset();
   slugManual = false;
   form.responsavel.value = lembrar('responsavel') || 'R Host';
@@ -103,7 +231,7 @@ form.onsubmit = async (e) => {
   try {
     const dados = Object.fromEntries(new FormData(form));
     lembrar('responsavel', dados.responsavel);
-    const { slug } = await api('/api/leads', dados);
+    const { slug } = await api('criar', dados);
     await carregarLista();
     location.hash = `#/lead/${slug}`;
   } catch (err) {
@@ -118,22 +246,28 @@ async function abrirLead(slug) {
   estado.atual = slug;
   estado.rodandoAqui = false;
   desenharLista();
-  $('#tela-novo').hidden = true;
-  $('#tela-lead').hidden = false;
+  mostrar('#tela-lead');
   $('#log').replaceChildren();
   try {
     await atualizarLead();
+    const h = await api('eventos', { slug });
+    if (estado.atual !== slug) return; // trocou de lead enquanto carregava
+    for (const linha of h.linhas) { try { receber(JSON.parse(linha)); } catch { /* linha cortada no histórico */ } }
+    receber(h.estado);
+    estado.aoVivo = slug; // daqui em diante os eventos chegam ao vivo
   } catch (err) {
     toast(err.message);
-    return;
   }
-  const fonte = estado.fonte = new EventSource(`/api/leads/${encodeURIComponent(slug)}/eventos`);
-  fonte.onopen = () => $('#log').replaceChildren(); // reconexão manda o histórico de novo
-  fonte.onmessage = (e) => receber(JSON.parse(e.data));
 }
 
+window.painel.ouvir((slug, linha) => {
+  const ev = JSON.parse(linha);
+  if (ev.t === 'progresso') progresso(ev);
+  else if (slug === estado.aoVivo) receber(ev);
+});
+
 async function atualizarLead() {
-  const l = estado.lead = await api(`/api/leads/${encodeURIComponent(estado.atual)}`);
+  const l = estado.lead = await api('lead', { slug: estado.atual });
   $('#lead-nome').textContent = l.nome;
   $('#lead-meta').innerHTML = [pill(l.status), esc(l.slug), esc(l.cidade), esc(l.responsavel)].filter(Boolean).join('<span class="ponto">·</span>');
   const links = ['a', 'b'].filter((v) => l.links[v])
@@ -181,18 +315,18 @@ function desenharPalco() {
   $('#aparelhos').hidden = !ehSite;
   const abrir = $('#abrir');
   abrir.hidden = !ehSite || !l.site[v];
-  abrir.href = ehSite ? `/site/${l.slug}/dist/${v}/` : '#';
+  abrir.href = ehSite ? `${SITE}/${l.slug}/dist/${v}/` : '#';
 
   if (ehSite) {
     palco.innerHTML = l.site[v]
-      ? `<div class="moldura"><iframe title="Variante ${v.toUpperCase()}" src="/site/${esc(l.slug)}/dist/${v}/?t=${Date.now()}"></iframe></div>`
+      ? `<div class="moldura"><iframe title="Variante ${v.toUpperCase()}" src="${SITE}/${esc(l.slug)}/dist/${v}/?t=${Date.now()}"></iframe></div>`
       : vazio(`A variante ${v.toUpperCase()} ainda não foi gerada.`, 'O Claude roda o build depois de preencher o site.config.json.');
     ajustarEscala();
   } else if (v === 'prints') {
     palco.innerHTML = l.prints.length
       ? `<div class="prints">${l.prints.map((p) => `
-          <a class="print" href="/site/${esc(l.slug)}/prints/${p.nome}.jpg?v=${p.v}" target="_blank" rel="noopener">
-            <img src="/site/${esc(l.slug)}/prints/${p.nome}.jpg?v=${p.v}" alt="Print ${p.nome}" loading="lazy">
+          <a class="print" href="${SITE}/${esc(l.slug)}/prints/${p.nome}.jpg?v=${p.v}" target="_blank" rel="noopener">
+            <img src="${SITE}/${esc(l.slug)}/prints/${p.nome}.jpg?v=${p.v}" alt="Print ${p.nome}" loading="lazy">
             <span>${p.nome.replace('-', ' · ')} px</span>
           </a>`).join('')}</div>`
       : vazio('Sem prints ainda.', 'Eles aparecem aqui quando o Claude roda npm run prints.');
@@ -241,9 +375,9 @@ function receber(ev) {
         <div class="perm-titulo">Permissão: <b>${esc(ev.nome)}</b></div>
         <pre>${esc(ev.det)}</pre>
         <div class="perm-botoes">
-          <button class="btn primario" type="button" data-perm="${ev.id}" data-ok="1">Permitir</button>
-          <button class="btn" type="button" data-perm="${ev.id}" data-ok="1" data-sempre="1" title="Não pergunta de novo nesta sessão">Sempre</button>
-          <button class="btn" type="button" data-perm="${ev.id}" data-ok="0">Negar</button>
+          <button class="btn primario" type="button" data-perm="${esc(ev.id)}" data-ok="1">Permitir</button>
+          <button class="btn" type="button" data-perm="${esc(ev.id)}" data-ok="1" data-sempre="1" title="Não pergunta de novo nesta sessão">Sempre</button>
+          <button class="btn" type="button" data-perm="${esc(ev.id)}" data-ok="0">Negar</button>
         </div>`, 'perm');
       d.dataset.id = ev.id;
       break;
@@ -283,7 +417,7 @@ $('#log').onclick = async (e) => {
   const b = e.target.closest('[data-perm]');
   if (!b) return;
   try {
-    await api(`/api/permissao/${b.dataset.perm}`, { ok: b.dataset.ok === '1', sempre: Boolean(b.dataset.sempre) });
+    await api('permissao', { id: b.dataset.perm, ok: b.dataset.ok === '1', sempre: Boolean(b.dataset.sempre) });
   } catch (err) {
     toast(err.message);
     fecharPermissao(b.dataset.perm, 'Expirou');
@@ -292,7 +426,7 @@ $('#log').onclick = async (e) => {
 
 async function mandar(texto) {
   try {
-    await api(`/api/leads/${encodeURIComponent(estado.atual)}/mensagem`, { texto });
+    await api('mensagem', { slug: estado.atual, texto });
     return true;
   } catch (err) {
     toast(err.message);
@@ -312,8 +446,10 @@ $('#msg').onkeydown = (e) => {
   }
 };
 $('#atalhos').onclick = (e) => { const t = e.target.closest('[data-texto]')?.dataset.texto; if (t) mandar(t); };
-$('#parar').onclick = () => api(`/api/leads/${encodeURIComponent(estado.atual)}/parar`, {}).catch((err) => toast(err.message));
+$('#parar').onclick = () => api('parar', { slug: estado.atual }).catch((err) => toast(err.message));
 
 // ---------- Início ----------
 carregarLista().then(rota).catch((err) => toast(err.message));
 setInterval(() => carregarLista().catch(() => {}), 10000);
+// Voltou do navegador ou do terminal (login do GitHub ou do Claude): confere na hora
+window.addEventListener('focus', () => carregarLista().catch(() => {}));

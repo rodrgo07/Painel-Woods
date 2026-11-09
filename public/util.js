@@ -20,6 +20,14 @@ export function lerFicha(md) {
   };
 }
 
+/** Anota o Instagram e a cidade na ficha recém-criada (campos vazios do _modelo-lead.md) */
+export function gravarNaFicha(md, { instagram = '', cidade = '' }) {
+  const linha = (v) => String(v).replace(/[\r\n]+/g, ' ').trim(); // uma linha só: não quebra o cabeçalho da ficha
+  if (linha(cidade)) md = md.replace(/^cidade:[ \t]*$/m, () => `cidade: ${linha(cidade)}`);
+  if (linha(instagram)) md = md.replace(/^- Instagram:[ \t]*$/m, () => `- Instagram: ${linha(instagram)}`);
+  return md;
+}
+
 /** Uma linha legível para cada ferramenta que o Claude usa */
 export function resumir(nome, entrada = {}, base = '') {
   let det = String(entrada.command ?? entrada.file_path ?? entrada.url ?? entrada.pattern

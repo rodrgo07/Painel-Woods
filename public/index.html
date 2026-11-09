@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' painel://site data:; frame-src painel://site; base-uri 'none'; form-action 'none'">
   <title>Painel Woods</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238e1b1b'/%3E%3Cpath d='M7 10l3.5 12L16 12l5.5 10L25 10' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-  <script>try { const t = localStorage.getItem('tema'); if (t) document.documentElement.dataset.tema = t; } catch {}</script>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <aside class="lateral">
@@ -19,16 +19,94 @@
     </a>
     <input id="busca" type="search" placeholder="Buscar lead" aria-label="Buscar lead">
     <nav id="lista" aria-label="Leads"></nav>
-    <p id="aviso-login" class="aviso" hidden>Sem login do Claude. Rode <code>claude.exe auth login</code> (veja o README) ou coloque <code>ANTHROPIC_API_KEY</code> no <code>.env</code>.</p>
+    <a id="aviso" class="aviso" href="#/config" hidden></a>
     <footer class="rodape">
       <span id="claude-status" class="claude-status">Claude livre</span>
-      <button id="tema" class="icone" type="button" aria-label="Alternar tema claro e escuro" title="Tema">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" class="cheio"/></svg>
-      </button>
+      <a class="icone" href="#/config" aria-label="Configurações" title="Configurações">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2.5"/><circle cx="9" cy="12" r="2.5"/><circle cx="17" cy="18" r="2.5"/></svg>
+      </a>
     </footer>
   </aside>
 
   <main>
+    <section id="tela-config" class="tela-config" hidden>
+      <div class="config">
+        <header>
+          <h1 id="config-titulo">Configurações</h1>
+          <p id="config-sub" class="suave"></p>
+        </header>
+
+        <div id="progresso" class="progresso" role="status" hidden>
+          <strong id="prog-titulo"></strong>
+          <progress id="prog-barra" max="100"></progress>
+          <span id="prog-linha" class="suave"></span>
+        </div>
+
+        <article class="cartao passo" id="p-pc">
+          <h2>1. Este computador <span class="situacao"></span></h2>
+          <ul id="checagens" class="checagens"></ul>
+          <label>Navegador dos prints
+            <select id="c-navegador">
+              <option value="">Automático (Chrome; sem ele, Edge)</option>
+              <option value="chrome">Chrome</option>
+              <option value="edge">Edge</option>
+            </select>
+          </label>
+          <div class="botoes">
+            <button class="btn" type="button" data-acao="checar">Verificar de novo</button>
+            <button class="btn primario" type="button" data-acao="baixarChromium" id="b-chromium" hidden>Baixar o Chromium</button>
+          </div>
+        </article>
+
+        <article class="cartao passo" id="p-github">
+          <h2>2. GitHub <span class="situacao"></span></h2>
+          <p class="suave">O repositório WOODS é privado. Ao entrar, abre uma janela do GitHub, e o acesso fica guardado no Gerenciador de Credenciais do Windows.</p>
+          <div class="botoes"><button class="btn" type="button" data-acao="github">Entrar no GitHub</button></div>
+        </article>
+
+        <article class="cartao passo" id="p-woods">
+          <h2>3. WOODS <span class="situacao"></span></h2>
+          <p id="e-woods" class="suave"></p>
+          <div class="botoes">
+            <button class="btn primario" type="button" data-acao="baixarWoods" id="b-woods">Baixar o WOODS</button>
+            <button class="btn" type="button" data-acao="atualizar" id="b-atualizar" hidden>Atualizar WOODS</button>
+          </div>
+        </article>
+
+        <article class="cartao passo" id="p-claude">
+          <h2>4. Claude <span class="situacao"></span></h2>
+          <p id="e-claude" class="suave"></p>
+          <div class="botoes"><button class="btn primario" type="button" data-acao="loginClaude">Entrar com a conta do Claude</button></div>
+          <form id="form-chave" class="com-botao">
+            <label>Ou uma chave da API (cobrada por uso)<input id="c-chave" type="password" autocomplete="off" placeholder="sk-ant-…"></label>
+            <button class="btn" type="submit">Salvar chave</button>
+            <button class="btn" type="button" data-acao="removerChave" id="b-sem-chave" hidden>Remover</button>
+          </form>
+          <label>Modelo<select id="c-modelo"></select></label>
+        </article>
+
+        <form class="cartao passo" id="p-git">
+          <h2>5. Assinatura dos commits <span class="situacao"></span></h2>
+          <p class="suave">Nome e e-mail que aparecem nos commits do WOODS.</p>
+          <div class="linha">
+            <label>Nome<input id="c-git-nome" required placeholder="rodrgo07"></label>
+            <label>E-mail<input id="c-git-email" type="email" required placeholder="voce@exemplo.com"></label>
+          </div>
+          <div class="botoes"><button class="btn" type="submit">Salvar</button></div>
+        </form>
+
+        <article class="cartao">
+          <h2>Dados e diagnóstico</h2>
+          <div class="botoes">
+            <button class="btn" type="button" data-acao="importar">Importar conversas de uma instalação antiga…</button>
+            <button class="btn" type="button" data-acao="abrirLogs">Abrir a pasta de logs</button>
+          </div>
+        </article>
+
+        <a id="config-pronto" class="btn primario largo" href="#/novo">Abrir o painel</a>
+      </div>
+    </section>
+
     <section id="tela-novo" class="tela-novo" hidden>
       <form id="form-novo" class="cartao" autocomplete="off">
         <h1>Novo lead</h1>
@@ -70,7 +148,7 @@
                 <button type="button" data-aparelho="celular" title="Celular (390 px)">Celular</button>
                 <button type="button" data-aparelho="desktop" title="Desktop (1440 px)">Desktop</button>
               </div>
-              <a id="abrir" class="icone" target="_blank" rel="noopener" title="Abrir em nova aba" aria-label="Abrir em nova aba">
+              <a id="abrir" class="icone" target="_blank" rel="noopener" title="Abrir em outra janela" aria-label="Abrir em outra janela">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
               </a>
               <button id="recarregar" class="icone" type="button" title="Recarregar" aria-label="Recarregar">
@@ -104,6 +182,6 @@
   </main>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
