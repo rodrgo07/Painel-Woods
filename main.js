@@ -21,8 +21,8 @@ if (!app.isPackaged) { try { process.loadEnvFile(path.join(AQUI, '.env')); } cat
 
 // Tudo do usuário em %APPDATA%\PainelWoods. Nada é gravado na pasta de instalação.
 app.setPath('userData', process.env.PAINEL_DADOS || path.join(app.getPath('appData'), 'PainelWoods'));
-// Uma instância só. No app instalado, também não abre com porta de depuração.
-if (!app.requestSingleInstanceLock() || (app.isPackaged && app.commandLine.hasSwitch('remote-debugging-port'))) process.exit(0);
+// Uma instância só: a segunda avisa a primeira (evento second-instance) e sai
+if (!app.requestSingleInstanceLock()) process.exit(0);
 
 const DADOS = app.getPath('userData');
 const LOGS = path.join(DADOS, 'logs');
