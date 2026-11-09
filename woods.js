@@ -83,9 +83,12 @@ export function acompanhar(p) {
   p.once('exit', () => filhos.delete(p));
   return p;
 }
-/** Derruba cada processo aberto e o que ele abriu (Claude → Playwright → navegador, npm → node) */
+/** Derruba o processo e o que ele abriu (Claude → Playwright → navegador, npm → node) */
+export function matar(p) {
+  if (p.pid && p.exitCode === null) spawnSync('taskkill', ['/T', '/F', '/PID', String(p.pid)], { windowsHide: true });
+}
 export function matarFilhos() {
-  for (const p of filhos) if (p.pid) spawnSync('taskkill', ['/T', '/F', '/PID', String(p.pid)], { windowsHide: true });
+  filhos.forEach(matar);
   filhos.clear();
 }
 

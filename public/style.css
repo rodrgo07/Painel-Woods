@@ -77,6 +77,7 @@ textarea { resize: vertical; }
 .marca rect { fill: var(--destaque); stroke: none; }
 .marca path { stroke: var(--destaque-texto); stroke-width: 2.6; }
 #busca { background: var(--superficie-2); border-color: transparent; }
+#busca:focus { border-color: var(--destaque-linha); } /* o id acima ganharia do input:focus e o foco sumia */
 #lista { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; margin: 0 -4px; padding: 0 4px; }
 .item { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: 4px; color: inherit; text-decoration: none; }
 .item:hover { background: var(--superficie-2); }

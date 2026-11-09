@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { validar, ler, salvar, caminhoSeguro, limpar, MODELOS } from '../nucleo.js';
-import { checar, acharNavegador, ambiente } from '../woods.js';
+import { checar, acharNavegador, ambiente, ferramentas, rodar, novidades, atualizar } from '../woods.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'painel-teste-'));
 const criar = (base, ...arqs) => arqs.forEach((a) => {
@@ -63,6 +63,41 @@ test('acharNavegador: escolhido, depois Chrome, depois Edge, depois o Chromium b
   const pasta = tmp();
   criar(pasta, 'chromium-1200/chrome-win64/chrome.exe', 'chromium_headless_shell-1200/chrome-win/headless_shell.exe');
   assert.deepEqual(acharNavegador('', pasta, () => false), { tipo: 'chromium', exe: path.join(pasta, 'chromium-1200', 'chrome-win64', 'chrome.exe') });
+});
+
+// Usa o git embutido (npm run ferramentas). Sem ele, o teste é pulado.
+const F = ferramentas(path.resolve(import.meta.dirname, '..', 'vendor'));
+test('atualizar o WOODS não mexe em trabalho local de um lead em andamento', { skip: !fs.existsSync(F.git) }, async () => {
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t.test', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t.test' };
+  const o = { ...F, env };
+  const git = (dir, ...a) => rodar(F.git, a, { cwd: dir, env });
+  const origem = tmp();
+  const copia = path.join(tmp(), 'WOODS');
+  const gravar = (dir, arq, txt) => fs.writeFileSync(path.join(dir, arq), txt);
+  const publicar = async (arq, txt) => { gravar(origem, arq, txt); await git(origem, 'add', '-A'); await git(origem, 'commit', '-q', '-m', arq); };
+
+  await git(origem, 'init', '-q', '-b', 'main');
+  await publicar('modelo.txt', 'v1');
+  await publicar('lead.txt', 'v1');
+  await git(path.dirname(copia), 'clone', '-q', origem, copia);
+
+  // Novidade em outro arquivo: entra, e o que está sendo editado no lead continua lá
+  gravar(copia, 'lead.txt', 'em andamento');
+  await publicar('modelo.txt', 'v2');
+  assert.equal(await novidades(copia, o), 1);
+  assert.deepEqual(await atualizar(copia, o), { commits: 1, deps: false });
+  assert.equal(fs.readFileSync(path.join(copia, 'modelo.txt'), 'utf8'), 'v2');
+  assert.equal(fs.readFileSync(path.join(copia, 'lead.txt'), 'utf8'), 'em andamento');
+
+  // Novidade no mesmo arquivo: recusa com aviso claro e não altera nada
+  await publicar('lead.txt', 'v2');
+  await assert.rejects(atualizar(copia, o), /Nada foi alterado/);
+  assert.equal(fs.readFileSync(path.join(copia, 'lead.txt'), 'utf8'), 'em andamento');
+
+  // Mudou o package.json: avisa que as dependências precisam ser instaladas de novo
+  await git(copia, 'checkout', '-q', '--', 'lead.txt');
+  await publicar('package.json', '{}');
+  assert.deepEqual(await atualizar(copia, o), { commits: 2, deps: true });
 });
 
 test('ambiente põe o Node e o Git do app na frente do PATH, sem duplicar a chave', () => {

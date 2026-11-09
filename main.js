@@ -149,8 +149,8 @@ const ACOES = {
   }),
   loginClaude() {
     if (!fs.existsSync(CLAUDE)) throw new Error('Não achei o claude.exe do app.');
-    // detached: o login abre numa janela de console própria, que mostra o link e espera o navegador
-    woods.acompanhar(spawn(CLAUDE, ['auth', 'login'], { detached: true, stdio: 'ignore', env: env() }));
+    // `start` abre o login numa janela de terminal própria, que mostra o link e espera o navegador
+    spawn('cmd.exe', ['/c', 'start', 'Login do Claude', CLAUDE, 'auth', 'login'], { stdio: 'ignore', windowsHide: true, env: env() });
   },
   salvarConfig(d) {
     const novo = validar({ ...cfg, ...d, chaveApi: cfg.chaveApi });

@@ -11,7 +11,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { slugar, SLUG_OK, lerFicha, gravarNaFicha, resumir } from './public/util.js';
 import { limpar, registrar } from './nucleo.js';
-import { acompanhar } from './woods.js';
+import { acompanhar, matar } from './woods.js';
 
 export const ctx = {
   woods: '',          // pasta do repositório WOODS
@@ -133,6 +133,8 @@ async function rodar(slug, texto) {
         spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
           const p = acompanhar(spawn(command, args, { cwd, env, signal, windowsHide: true }));
           p.stderr.on('data', (d) => registrar(`claude: ${String(d).trim()}`));
+          // Parar é na hora: o `signal` do SDK só dispara depois de uns segundos de espera, com o Claude ainda agindo
+          t.abort.signal.addEventListener('abort', () => matar(p), { once: true });
           return p;
         },
         settingSources: ['project'], // CLAUDE.md e .claude/ do WOODS
@@ -145,8 +147,10 @@ async function rodar(slug, texto) {
       },
     });
     for await (const m of q) {
-      if (m.type === 'system' && m.subtype === 'init') salvarSessao(slug, m.session_id);
-      else if (m.type === 'assistant' && !m.parent_tool_use_id) {
+      if (m.type === 'system' && m.subtype === 'init') {
+        salvarSessao(slug, m.session_id);
+        registrar(`conversa ${slug}: sessão ${m.session_id}, modelo ${m.model}, mcp ${(m.mcp_servers || []).map((s) => `${s.name}=${s.status}`).join(', ')}`);
+      } else if (m.type === 'assistant' && !m.parent_tool_use_id) {
         for (const b of m.message.content) {
           if (b.type === 'text' && b.text.trim()) emitir(slug, { t: 'claude', texto: b.text });
           else if (b.type === 'tool_use' && b.name !== 'TodoWrite') emitir(slug, { t: 'ferramenta', ...resumir(b.name, b.input, ctx.woods) });
