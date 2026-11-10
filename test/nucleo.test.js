@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { validar, ler, salvar, caminhoSeguro, limpar, MODELOS } from '../nucleo.js';
+import { validar, ler, salvar, caminhoSeguro, importarConversas, limpar, MODELOS } from '../nucleo.js';
 import { checar, acharNavegador, ambiente, ferramentas, rodar, novidades, atualizar } from '../woods.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'painel-teste-'));
@@ -36,6 +36,17 @@ test('configuração: padrões, validação e gravação', () => {
   assert.deepEqual(ler(arq), { modelo: 'claude-fable-5-2', gitNome: 'R', gitEmail: 'r@woods.com', navegador: 'edge', chaveApi: '' });
   fs.writeFileSync(arq, '{quebrado');
   assert.equal(ler(arq).modelo, 'claude-opus-5-5', 'arquivo quebrado: padrão');
+});
+
+test('importarConversas copia só conversas de leads e não troca as que já existem', () => {
+  const origem = tmp();
+  const destino = tmp();
+  criar(origem, 'lima-pet-salon.jsonl', 'pet-x.jsonl', 'sessoes.json', 'Nome Errado.jsonl', 'anotacao.txt');
+  fs.writeFileSync(path.join(destino, 'pet-x.jsonl'), 'conversa atual');
+  assert.equal(importarConversas(origem, destino), 1);
+  assert.deepEqual(fs.readdirSync(destino).sort(), ['lima-pet-salon.jsonl', 'pet-x.jsonl']);
+  assert.equal(fs.readFileSync(path.join(destino, 'pet-x.jsonl'), 'utf8'), 'conversa atual');
+  assert.equal(importarConversas(origem, destino), 0, 'repetir não copia de novo');
 });
 
 test('limpar tira chaves e tokens do que vai para o log', () => {

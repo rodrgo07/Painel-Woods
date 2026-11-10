@@ -13,8 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, safeStorage, session, shell } from 'electron';
 import * as painel from './painel.js';
 import * as woods from './woods.js';
-import { MODELOS, validar, ler, salvar, caminhoSeguro, limpar, iniciarLog, registrar } from './nucleo.js';
-import { SLUG_OK } from './public/util.js';
+import { MODELOS, validar, ler, salvar, caminhoSeguro, importarConversas, limpar, iniciarLog, registrar } from './nucleo.js';
 
 const AQUI = import.meta.dirname;
 if (!app.isPackaged) { try { process.loadEnvFile(path.join(AQUI, '.env')); } catch { /* .env é opcional, só para quem desenvolve */ } }
@@ -168,15 +167,7 @@ const ACOES = {
     const antiga = [app.getPath('documents'), app.getPath('desktop')]
       .map((p) => path.join(p, 'Painel Woods', 'dados')).find((p) => fs.existsSync(p));
     const r = await dialog.showOpenDialog(win, { title: 'Escolha a pasta "dados" da instalação antiga', defaultPath: antiga, properties: ['openDirectory'] });
-    if (r.canceled) return { importadas: -1 };
-    let importadas = 0;
-    for (const f of fs.readdirSync(r.filePaths[0])) {
-      const destino = path.join(DADOS, 'conversas', f);
-      if (!f.endsWith('.jsonl') || !SLUG_OK.test(f.slice(0, -6)) || fs.existsSync(destino)) continue;
-      fs.copyFileSync(path.join(r.filePaths[0], f), destino);
-      importadas++;
-    }
-    return { importadas };
+    return { importadas: r.canceled ? -1 : importarConversas(r.filePaths[0], path.join(DADOS, 'conversas')) };
   },
   abrirLogs() { shell.openPath(LOGS); },
 };

@@ -1,6 +1,7 @@
 // Peças sem Electron nem SDK do Claude: dá para testar com `npm test`.
 import fs from 'node:fs';
 import path from 'node:path';
+import { SLUG_OK } from './public/util.js';
 
 // ---------- Configurações (%APPDATA%\PainelWoods\config.json) ----------
 export const MODELOS = ['claude-opus-5-5', 'claude-fable-5-2'];
@@ -37,6 +38,19 @@ export function caminhoSeguro(base, partes) {
   if (arq !== base && !arq.startsWith(base + path.sep)) return null;
   if (fs.statSync(arq, { throwIfNoEntry: false })?.isDirectory()) arq = path.join(arq, 'index.html');
   return fs.statSync(arq, { throwIfNoEntry: false })?.isFile() ? arq : null;
+}
+
+// ---------- Conversas de uma instalação antiga ----------
+/** Copia os <slug>.jsonl de `origem` para `destino` sem trocar os que já existem. Devolve quantos copiou */
+export function importarConversas(origem, destino) {
+  let copiadas = 0;
+  for (const f of fs.readdirSync(origem)) {
+    const para = path.join(destino, f);
+    if (!f.endsWith('.jsonl') || !SLUG_OK.test(f.slice(0, -6)) || fs.existsSync(para)) continue;
+    fs.copyFileSync(path.join(origem, f), para);
+    copiadas++;
+  }
+  return copiadas;
 }
 
 // ---------- Log (%APPDATA%\PainelWoods\logs) ----------
