@@ -75,6 +75,7 @@
       "artifactName": "Painel-Woods-Setup-${version}.${ext}",
       "shortcutName": "Painel Woods",
       "uninstallDisplayName": "Painel Woods",
+      "differentialPackage": false,
       "include": "build/installer.nsh"
     },
     "portable": {

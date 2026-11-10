@@ -142,7 +142,9 @@ async function rodar(slug, texto) {
         mcpServers: { playwright: o.mcp },
         permissionMode: 'acceptEdits',
         allowedTools: PERMITIDAS,
-        disallowedTools: ['AskUserQuestion'], // perguntas vêm como texto, respondidas pelo painel
+        // AskUserQuestion: perguntas vêm como texto, respondidas pelo painel.
+        // PowerShell: só o Bash do app, para as regras de PERMITIDAS valerem (pelo PowerShell até o build pediria permissão)
+        disallowedTools: ['AskUserQuestion', 'PowerShell'],
         canUseTool: pedirPermissao,
       },
     });
