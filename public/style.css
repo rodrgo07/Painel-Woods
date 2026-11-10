@@ -1,4 +1,4 @@
-/* Painel Woods: dark minimalista, preto e vermelho escuro (claro opcional pelo botão) */
+/* Painel Woods: tema único, dark minimalista, preto e vermelho escuro */
 :root {
   --fundo: #0b0b0b;
   --superficie: #121212;
@@ -19,12 +19,6 @@
   --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
   color-scheme: dark;
 }
-:root[data-tema="light"] {
-  --fundo: #f7f7f6; --superficie: #ffffff; --superficie-2: #efefee; --borda: #dededc;
-  --texto: #121212; --suave: #66635f; --destaque: #8e1b1b; --destaque-texto: #ffffff;
-  --destaque-linha: #8e1b1b; --destaque-suave: #f5e9e9; --perigo: #a61b1b; --aviso: #8a5a12; --aviso-suave: #faf2e6;
-  color-scheme: light;
-}
 
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -44,13 +38,7 @@ code { font: 12.5px var(--mono); background: var(--superficie-2); padding: 1px 5
 :focus-visible { outline: 2px solid var(--destaque-linha); outline-offset: 2px; }
 svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .suave { color: var(--suave); }
-/* Troca de tema suave só no fundo e nas bordas; o texto muda na hora */
-body, .lateral, .conversa, .cartao, .item, .palco-conteudo, .seg button, input, select, textarea {
-  transition: background-color .2s ease-out, border-color .2s ease-out;
-}
-/* Elevação por superfície mais clara, sem sombra */
-:root:not([data-tema="light"]) .item.ativo { background: var(--superficie-2); }
-:root:not([data-tema="light"]) .seg button[aria-pressed="true"] { background: #262626; }
+.item, .seg button, input, select, textarea { transition: background-color .2s ease-out, border-color .2s ease-out; }
 
 /* ---------- Botões e campos ---------- */
 .btn {
@@ -89,20 +77,21 @@ textarea { resize: vertical; }
 .marca rect { fill: var(--destaque); stroke: none; }
 .marca path { stroke: var(--destaque-texto); stroke-width: 2.6; }
 #busca { background: var(--superficie-2); border-color: transparent; }
+#busca:focus { border-color: var(--destaque-linha); } /* o id acima ganharia do input:focus e o foco sumia */
 #lista { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; margin: 0 -4px; padding: 0 4px; }
 .item { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: 4px; color: inherit; text-decoration: none; }
 .item:hover { background: var(--superficie-2); }
-.item.ativo { background: var(--superficie); box-shadow: var(--sombra); }
+.item.ativo { background: var(--superficie-2); } /* elevação por superfície mais clara, sem sombra */
 .item-nome { display: flex; align-items: center; gap: 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-meta { display: flex; align-items: center; gap: 8px; color: var(--suave); font-size: 12px; }
 .vazio-lista { color: var(--suave); padding: 8px 10px; margin: 0; }
-.aviso { margin: 0; padding: 10px 12px; border-radius: 4px; background: var(--aviso-suave); color: var(--aviso); font-size: 12.5px; }
+.aviso { display: block; padding: 10px 12px; border-radius: 4px; background: var(--aviso-suave); color: var(--aviso); font-size: 12.5px; text-decoration: none; }
+.aviso:hover { text-decoration: underline; }
 .rodape { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--borda); }
 .claude-status { display: flex; align-items: center; gap: 8px; color: var(--suave); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .claude-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--suave); flex: none; }
 .claude-status.ativo::before, .pulso { background: var(--destaque-linha); animation: pulso 1.4s ease-in-out infinite; }
 .pulso { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-#tema .cheio { fill: currentColor; stroke: none; }
 @keyframes pulso { 50% { opacity: .3; } }
 
 /* ---------- Status ---------- */
@@ -125,6 +114,28 @@ main { min-width: 0; height: 100vh; }
 .cartao label { display: flex; flex-direction: column; gap: 6px; font-weight: 500; font-size: 13px; }
 .linha { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
+/* ---------- Configurações e primeira execução ---------- */
+.tela-config { height: 100%; overflow-y: auto; padding: 32px 16px; }
+.config { width: min(100%, 640px); margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.config header p { margin: 4px 0 0; }
+.config .cartao { width: 100%; padding: 20px; }
+.config h2 { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; font-size: 15px; font-weight: 600; }
+.situacao { font-size: 12px; font-weight: 500; color: var(--aviso); }
+.passo.feito .situacao { color: #4cc38a; }
+.config .cartao > p { margin: 0; overflow-wrap: anywhere; }
+.botoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.checagens { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; overflow-wrap: anywhere; }
+.checagens li::before { content: "•"; display: inline-block; width: 16px; color: var(--suave); }
+.checagens .ok::before { content: "✓"; color: #4cc38a; }
+.checagens .ruim::before { content: "✕"; color: var(--perigo); }
+.com-botao { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.com-botao label { flex: 1 1 220px; }
+.progresso { position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--destaque-linha); border-radius: 4px; background: var(--destaque-suave); }
+.progresso.erro { border-color: var(--perigo); }
+.progresso.erro strong { color: var(--perigo); }
+.progresso span { font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow-y: auto; }
+.progresso progress { width: 100%; height: 6px; accent-color: var(--destaque-linha); }
+
 /* ---------- Lead ---------- */
 .tela-lead { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .topo { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--borda); }
@@ -141,7 +152,7 @@ main { min-width: 0; height: 100vh; }
 .seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--superficie-2); border-radius: 4px; }
 .seg button { border: 0; background: transparent; color: var(--suave); padding: 5px 12px; border-radius: 4px; font: 500 13px var(--fonte); cursor: pointer; white-space: nowrap; }
 .seg button:hover { color: var(--texto); }
-.seg button[aria-pressed="true"] { background: var(--superficie); color: var(--texto); box-shadow: var(--sombra); }
+.seg button[aria-pressed="true"] { background: #262626; color: var(--texto); }
 .palco-conteudo { flex: 1; min-height: 0; overflow: auto; padding: 24px; background: var(--superficie-2); }
 .moldura { margin: 0 auto; overflow: hidden; border-radius: 4px; background: #fff; box-shadow: var(--sombra); border: 1px solid var(--borda); }
 .moldura iframe { display: block; border: 0; transform-origin: 0 0; background: #fff; }

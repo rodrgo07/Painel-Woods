@@ -1,16 +1,85 @@
 {
   "name": "woods-painel",
+  "productName": "Painel Woods",
+  "version": "1.0.0",
   "private": true,
-  "description": "Interface para o WOODS: cria leads e gera as variantes A e B com o Claude",
+  "description": "Painel do WOODS: cria leads e gera as variantes A e B com o Claude",
+  "author": "Woods",
   "type": "module",
+  "main": "main.js",
   "scripts": {
-    "start": "node --env-file-if-exists=.env servidor.js",
-    "teste": "node --test"
+    "postinstall": "install-electron",
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "ferramentas": "node scripts/ferramentas.js",
+    "dist": "node scripts/ferramentas.js && electron-builder --win --x64"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.319"
+    "@anthropic-ai/claude-agent-sdk": "^0.3.319",
+    "@playwright/mcp": "0.0.85"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "br.com.woods.painel",
+    "productName": "Painel Woods",
+    "copyright": "Woods",
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "painel.js",
+      "woods.js",
+      "nucleo.js",
+      "public/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**",
+      "node_modules/@playwright/mcp/**",
+      "node_modules/playwright/**",
+      "node_modules/playwright-core/**"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor",
+        "to": "vendor",
+        "filter": [
+          "**/*",
+          "!git/usr/share/vim/**",
+          "!git/usr/share/doc/**",
+          "!git/ucrt64/share/doc/**",
+          "!git/etc/{hosts,protocols,services,networks,mtab}",
+          "!git/tmp/**"
+        ]
+      }
+    ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "artifactName": "Painel-Woods-Setup-${version}.${ext}",
+      "shortcutName": "Painel Woods",
+      "uninstallDisplayName": "Painel Woods",
+      "differentialPackage": false,
+      "include": "build/installer.nsh"
+    },
+    "portable": {
+      "artifactName": "Painel-Woods-${version}-portable.${ext}"
+    }
   }
 }
