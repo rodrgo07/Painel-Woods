@@ -57,10 +57,12 @@ function desenharLista() {
   const q = $('#busca').value.trim().toLowerCase();
   const itens = estado.leads.filter((l) => `${l.nome} ${l.slug} ${l.cidade}`.toLowerCase().includes(q));
   $('#lista').innerHTML = itens.map((l) => `
-    <a class="item${l.slug === estado.atual ? ' ativo' : ''}" href="#/lead/${esc(l.slug)}">
-      <span class="item-nome">${esc(l.nome)}${estado.rodando === l.slug ? '<span class="pulso" title="Claude trabalhando"></span>' : ''}</span>
-      <span class="item-meta">${pill(l.status)}${l.cidade ? `<span>${esc(l.cidade)}</span>` : ''}</span>
+    <a class="item${l.slug === estado.atual ? ' ativo' : ''}" href="#/lead/${esc(l.slug)}" title="${esc([l.status, l.cidade].filter(Boolean).join(', '))}">
+      <i class="bolinha" data-status="${esc(l.status)}"></i>
+      <span class="item-nome">${esc(l.nome)}</span>
+      ${estado.rodando === l.slug ? '<span class="pulso" title="Claude trabalhando"></span>' : `<span class="item-meta">${esc(l.status)}</span>`}
     </a>`).join('') || `<p class="vazio-lista">${q ? 'Nada encontrado.' : 'Nenhum lead ainda.'}</p>`;
+  $('#conta').textContent = itens.length || '';
   const s = $('#claude-status');
   s.textContent = estado.rodando ? `Trabalhando em ${estado.rodando}` : 'Claude livre';
   s.classList.toggle('ativo', Boolean(estado.rodando));
@@ -306,6 +308,7 @@ $('#aparelhos').onclick = (e) => {
 $('#recarregar').onclick = () => atualizarLead().catch((err) => toast(err.message));
 
 function desenharPalco() {
+  soltarEscolha(); // a prévia vai ser trocada e o seletor some junto
   const l = estado.lead;
   const palco = $('#palco');
   const v = estado.vista;
@@ -446,7 +449,39 @@ $('#msg').onkeydown = (e) => {
   }
 };
 $('#atalhos').onclick = (e) => { const t = e.target.closest('[data-texto]')?.dataset.texto; if (t) mandar(t); };
-$('#parar').onclick = () => api('parar', { slug: estado.atual }).catch((err) => toast(err.message));
+// ---------- Escolher um elemento na prévia e citar no pedido ----------
+let escolha = 0; // conta as escolhas: resposta de uma escolha já cancelada é ignorada
+function soltarEscolha() {
+  escolha++;
+  $('#escolher').setAttribute('aria-pressed', 'false');
+}
+$('#escolher').onclick = async () => {
+  const b = $('#escolher');
+  if (b.getAttribute('aria-pressed') === 'true') {
+    soltarEscolha();
+    api('escolherElemento', { cancelar: true }).catch(() => {});
+    return;
+  }
+  const v = estado.vista;
+  if (!estado.lead?.site[v]) { toast('Abra a variante A ou B para escolher um elemento.'); return; }
+  const n = ++escolha;
+  b.setAttribute('aria-pressed', 'true');
+  try {
+    const el = await api('escolherElemento');
+    if (n !== escolha || !el) return;
+    const msg = $('#msg');
+    const antes = msg.value.trimEnd();
+    msg.value = `${antes ? `${antes}\n` : ''}Na variante ${v.toUpperCase()} (${estado.aparelho}), no elemento \`${el.seletor}\`${el.texto ? ` ("${el.texto}")` : ''}: `;
+    msg.focus();
+    msg.selectionStart = msg.selectionEnd = msg.value.length;
+  } catch (err) {
+    if (n === escolha) toast(err.message);
+  } finally {
+    if (n === escolha) soltarEscolha();
+  }
+};
+
+$('#parar').onclick =() => api('parar', { slug: estado.atual }).catch((err) => toast(err.message));
 
 // ---------- Início ----------
 carregarLista().then(rota).catch((err) => toast(err.message));

@@ -170,7 +170,51 @@ const ACOES = {
     return { importadas: r.canceled ? -1 : importarConversas(r.filePaths[0], path.join(DADOS, 'conversas')) };
   },
   abrirLogs() { shell.openPath(LOGS); },
+  /** Seletor de elemento na prévia: o site está em outra origem, então o script entra pelo main. Esc ou cancelar devolve null */
+  escolherElemento({ cancelar }) {
+    const f = win.webContents.mainFrame.frames.find((q) => q.url.startsWith('painel://site/'));
+    if (!f) throw new Error('Abra a variante A ou B para escolher um elemento.');
+    return f.executeJavaScript(cancelar ? 'window.__painelFim?.(null)' : `(${escolher})()`, true);
+  },
 };
+
+/** Roda dentro da prévia: destaca o que está sob o mouse e devolve o elemento clicado */
+function escolher() {
+  window.__painelFim?.(null);
+  return new Promise((pronto) => {
+    // Tag própria e `all:initial`: o CSS do site (transition em *, regras de div) não pega na caixa
+    const caixa = document.createElement('painel-caixa');
+    caixa.style.cssText = 'all:initial;position:fixed;z-index:2147483647;pointer-events:none;outline:2px solid #e0484f;background:rgba(168,31,39,.15);transition:none';
+    document.documentElement.append(caixa);
+    const nome = (el) => el.tagName.toLowerCase() + (el.id ? `#${el.id}` : [...el.classList].slice(0, 2).map((c) => `.${c}`).join(''));
+    const mover = (e) => {
+      const r = e.target.getBoundingClientRect();
+      Object.assign(caixa.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+    };
+    const clicar = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const el = e.target;
+      const caminho = [];
+      for (let p = el; p && p !== document.body && caminho.length < 4; p = p.parentElement) caminho.unshift(nome(p));
+      const texto = (el.innerText || el.getAttribute('alt') || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+      fim({ seletor: caminho.join(' > '), texto: texto.length > 100 ? `${texto.slice(0, 100)}…` : texto });
+    };
+    const tecla = (e) => { if (e.key === 'Escape') fim(null); };
+    const fim = (v) => {
+      removeEventListener('mousemove', mover, true);
+      removeEventListener('click', clicar, true);
+      removeEventListener('keydown', tecla, true);
+      caixa.remove();
+      window.__painelFim = null;
+      pronto(v);
+    };
+    window.__painelFim = fim;
+    addEventListener('mousemove', mover, true);
+    addEventListener('click', clicar, true);
+    addEventListener('keydown', tecla, true);
+  });
+}
 
 ipcMain.handle('painel', async (e, acao, dados) => {
   try {
@@ -222,7 +266,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, _permissao, responder) => responder(false)); // câmera, local etc.: nunca
   if (app.isPackaged) Menu.setApplicationMenu(null);
   win = new BrowserWindow({
-    width: 1440, height: 900, minWidth: 390, minHeight: 560, backgroundColor: '#0b0b0b', autoHideMenuBar: true,
+    width: 1440, height: 900, minWidth: 390, minHeight: 560, backgroundColor: '#0c0c0d', autoHideMenuBar: true,
     webPreferences: { preload: path.join(AQUI, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   win.on('closed', () => app.quit());
