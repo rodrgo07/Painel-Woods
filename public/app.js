@@ -49,9 +49,16 @@ async function carregarLista() {
   aviso.hidden = !s.falta.length && !s.novidades;
   aviso.textContent = s.falta.length ? 'Configuração incompleta. Abrir as configurações.'
     : `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`}. Abrir as configurações.`;
+  const nova = $('#nova-versao');
+  nova.hidden = !s.versaoNova;
+  if (s.versaoNova) {
+    nova.textContent = s.versaoNova.portatil ? `Versão ${s.versaoNova.versao} disponível. Baixar no GitHub.`
+      : `Versão ${s.versaoNova.versao} pronta. Clique para reiniciar e atualizar.`;
+  }
   desenharLista();
   if (!$('#tela-config').hidden) desenharConfig();
 }
+$('#nova-versao').onclick = () => api('atualizarApp').catch((err) => toast(err.message));
 
 function desenharLista() {
   const q = $('#busca').value.trim().toLowerCase();

@@ -11,6 +11,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, safeStorage, session, shell } from 'electron';
+import updater from 'electron-updater';
 import * as painel from './painel.js';
 import * as woods from './woods.js';
 import { MODELOS, validar, ler, salvar, caminhoSeguro, importarConversas, limpar, iniciarLog, registrar } from './nucleo.js';
@@ -67,6 +68,19 @@ painel.ctx.opcoes = () => ({
   mcp: { type: 'stdio', command: F.node, args: [path.join(MODULOS, '@playwright', 'mcp', 'cli.js'), ...(MCP_NAVEGADOR[navegador().tipo] || [])] },
 });
 
+// ---------- Atualização do próprio app, pelos releases do GitHub (build.publish no package.json) ----------
+const { autoUpdater } = updater;
+const PORTATIL = Boolean(process.env.PORTABLE_EXECUTABLE_DIR); // o portátil não se atualiza: só avisa e abre a página
+const RELEASES = 'https://github.com/rodrgo07/Painel-Woods/releases/latest';
+const versaoNova = { versao: '', pronta: false };
+autoUpdater.autoDownload = !PORTATIL; // baixa em segundo plano; se ninguém clicar, instala ao fechar o app
+autoUpdater.logger = null;
+autoUpdater.forceDevUpdateConfig = Boolean(process.env.PAINEL_TESTAR_ATUALIZACAO); // só para testar com dev-app-update.yml
+autoUpdater.on('update-available', (i) => { versaoNova.versao = i.version; });
+autoUpdater.on('update-downloaded', (i) => { versaoNova.versao = i.version; versaoNova.pronta = true; });
+autoUpdater.on('error', (e) => registrar(`atualização do app: ${e.message}`));
+const procurarVersao = () => autoUpdater.checkForUpdates().catch((e) => registrar(`atualização do app: ${e.message}`));
+
 /** O que falta para o painel funcionar. Lista vazia = pronto */
 function faltas() {
   const w = woods.checar(WOODS);
@@ -115,7 +129,16 @@ const ACOES = {
       temLogin: temLogin(), temChave: Boolean(cfg.chaveApi), falta: faltas(), novidades, tarefa,
       config: { modelo: cfg.modelo, gitNome: cfg.gitNome, gitEmail: cfg.gitEmail, navegador: cfg.navegador }, modelos: MODELOS,
       rodando: painel.rodando(), leads: w.clonado ? painel.leads() : [],
+      versaoNova: versaoNova.versao && (versaoNova.pronta || PORTATIL) ? { ...versaoNova, portatil: PORTATIL } : null,
     };
+  },
+  /** Fecha, instala a versão baixada sem perguntar nada e abre de novo. No portátil, abre a página do release */
+  atualizarApp() {
+    if (PORTATIL) return void shell.openExternal(RELEASES);
+    if (!versaoNova.pronta) throw new Error('A nova versão ainda está baixando.');
+    if (tarefa) throw new Error(`Espere terminar: ${tarefa}.`);
+    if (painel.rodando()) throw new Error(painel.ocupado());
+    setImmediate(() => autoUpdater.quitAndInstall(true, true));
   },
   lead: ({ slug }) => painel.lead(slug, true),
   eventos: ({ slug }) => painel.eventos(slug),
@@ -271,6 +294,10 @@ app.whenReady().then(() => {
   });
   win.on('closed', () => app.quit());
   win.loadURL('painel://app/');
+  if (app.isPackaged || autoUpdater.forceDevUpdateConfig) {
+    procurarVersao();
+    setInterval(procurarVersao, 60 * 60 * 1000); // quem deixa o app aberto o dia todo também fica sabendo
+  }
   // Só confere se há novidades; sem janela de login nesta hora. Atualizar é pelo botão.
   if (woods.checar(WOODS).clonado) {
     woods.novidades(WOODS, { ...F, env: { ...env(), GCM_INTERACTIVE: 'never' } })

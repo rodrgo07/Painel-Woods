@@ -96,6 +96,8 @@ textarea { resize: vertical; }
 .aviso { display: block; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 10px; background: var(--superficie); color: var(--suave); font-size: 12.5px; text-decoration: none; }
 .aviso::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--aviso); }
 .aviso:hover { color: var(--texto); }
+.nova-versao { width: 100%; margin-top: 8px; text-align: left; font: inherit; font-size: 12.5px; cursor: pointer; color: var(--texto); }
+.nova-versao::before { background: var(--ok); }
 .rodape { display: flex; flex-direction: column; gap: 4px; padding-top: 12px; border-top: 1px solid var(--borda); }
 .claude-status { display: flex; align-items: center; gap: 10px; padding: 6px 10px; color: var(--suave); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .claude-status.ativo { color: var(--texto); }

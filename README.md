@@ -74,6 +74,20 @@ npm run dist
 ```
 Sai em `dist/`: `Painel-Woods-Setup-<versão>.exe` e `Painel-Woods-<versão>-portable.exe`. A versão vem do `package.json`.
 
+### Lançar uma versão (atualização automática)
+```
+npm version 1.1.0 --no-git-tag-version
+git commit -am "Versão 1.1.0"
+git push
+npm run lancar
+```
+`npm run lancar` gera o instalador e cria o release `v<versão>` como rascunho em `rodrgo07/Painel-Woods`, com o `latest.yml`.
+Escreva as notas no GitHub e publique. O app instalado confere ao abrir e a cada hora, baixa em segundo plano e mostra
+"Versão x pronta" na barra lateral: um clique reinicia já atualizado. Se ninguém clicar, instala ao fechar o app.
+O portátil não se atualiza: mostra o aviso e abre a página do release. Os dados em `%APPDATA%\PainelWoods` ficam.
+Precisa do GitHub CLI (`gh`) logado. Para testar sem publicar, rode `npm start` com `PAINEL_TESTAR_ATUALIZACAO=1` e um
+`dev-app-update.yml` na raiz apontando para um servidor local (provider `generic`).
+
 ### Assinatura
 O build funciona sem certificado. Para assinar, defina antes do `npm run dist` as variáveis que o electron-builder lê:
 ```
