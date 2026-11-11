@@ -1,7 +1,7 @@
 {
   "name": "woods-painel",
   "productName": "Painel Woods",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Painel do WOODS: cria leads e gera as variantes A e B com o Claude",
   "author": "Woods",
