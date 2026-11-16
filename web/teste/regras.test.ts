@@ -1,8 +1,8 @@
 // Regras do Woods Web: fases do status, resumo dos cards, filtros, integração e links. `npm test` em web/.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fase, resumir, filtrar, opcoes, integracao, linkSeguro, descreverEvento, porResponsavel, iniciais, FILTROS_VAZIOS, SEM_CONTATO_MS } from '../src/lib/regras.ts';
-import type { Dispositivo, Projeto } from '../src/lib/tipos.ts';
+import { fase, resumir, filtrar, opcoes, integracao, emAndamento, textoAndamento, linkSeguro, descreverEvento, porResponsavel, iniciais, FILTROS_VAZIOS, SEM_CONTATO_MS } from '../src/lib/regras.ts';
+import type { Andamento, Dispositivo, Projeto } from '../src/lib/tipos.ts';
 
 const proj = (p: Partial<Projeto>): Projeto => ({
   slug: 's', nome: 'S', instagram: null, cidade: null, responsavel: null, nicho: null, status: 'pesquisa',
@@ -63,4 +63,30 @@ test('links: só http(s), nunca painel:// ou javascript:', () => {
   assert.equal(linkSeguro('javascript:alert(1)'), null);
   assert.equal(linkSeguro(null), null);
   assert.equal(descreverEvento({ id: '1', projeto_slug: 's', tipo: 'status', detalhe: { de: 'pesquisa', para: 'site pronto' }, ocorrido_em: '' }), 'Status: pesquisa → site pronto');
+});
+
+const pc = (id: string, ultimo: number, conectado = true): Dispositivo => ({
+  id, nome: id, versao_app: '1.1.0', conectado, ultimo_contato: new Date(ultimo).toISOString(), ultima_sincronizacao: null, pendentes: 0, ultimo_erro: null,
+});
+
+test('integração com os dois PCs da equipe', () => {
+  const agora = Date.UTC(2026, 10, 16, 12);
+  const r = integracao([pc('PC-L', agora - 2 * SEM_CONTATO_MS), pc('PC-R', agora - 60_000)], agora);
+  assert.equal(r.situacao, 'online', 'vale o PC com contato mais recente');
+  assert.equal(r.dispositivo?.id, 'PC-R');
+  assert.deepEqual(r.todos.map((x) => [x.dispositivo.id, x.situacao]), [['PC-R', 'online'], ['PC-L', 'sem-contato']]);
+  assert.deepEqual(integracao([], agora).todos, []);
+});
+
+test('em andamento: só vale com o PC dando sinal de vida', () => {
+  const agora = Date.UTC(2026, 10, 16, 12);
+  const a = (slug: string, dispositivo_id: string, ativo = true): Andamento => ({ projeto_slug: slug, dispositivo_id, quem: 'L Host', computador: 'PC-L', ativo, desde: new Date(agora - 600_000).toISOString() });
+  const m = emAndamento(
+    [a('lima', 'PC-L'), a('recanto', 'PC-R'), a('fiots', 'PC-L', false), a('outro', 'sumiu')],
+    [pc('PC-L', agora - 60_000), pc('PC-R', agora - 2 * SEM_CONTATO_MS)],
+    agora,
+  );
+  assert.deepEqual([...m.keys()], ['lima'], 'PC-R sem contato e o que já terminou não contam');
+  assert.equal(textoAndamento(m.get('lima')!), 'L Host com o Claude no PC-L');
+  assert.equal(textoAndamento({ ...m.get('lima')!, quem: null, computador: null }), 'Alguém com o Claude');
 });

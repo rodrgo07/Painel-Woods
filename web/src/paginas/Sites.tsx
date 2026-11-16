@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Geral } from '../lib/dados.ts';
-import { filtrar, opcoes, relativo, dataHora, fase as faseDe, FILTROS_VAZIOS, ROTULO_FASE, type Fase, type Filtros } from '../lib/regras.ts';
+import { filtrar, opcoes, relativo, dataHora, emAndamento, fase as faseDe, FILTROS_VAZIOS, ROTULO_FASE, type Fase, type Filtros } from '../lib/regras.ts';
 import { ir } from '../lib/ganchos.ts';
-import { Aviso, Atualizado, Avatar, Carregando, ErroAtualizar, Icone, Status } from '../componentes/ui.tsx';
+import { Aviso, Atualizado, Avatar, Carregando, ErroAtualizar, Icone, Status, Trabalhando } from '../componentes/ui.tsx';
 
 interface Props {
   geral: { dados: Geral | null; erro: string; carregando: boolean; em: number; recarregar: () => void };
@@ -39,6 +39,9 @@ export function Sites({ geral, busca, fase }: Props) {
     return c;
   }, [projetos]);
   const filtrando = f.busca || f.fase || f.status || f.cidade || f.responsavel;
+  const trabalhando = useMemo(() => (dados ? emAndamento(dados.andamento, dados.dispositivos) : new Map()), [dados]);
+  const eu = dados?.eu ?? '';
+  const meus = Boolean(eu) && f.responsavel === eu;
 
   return (
     <>
@@ -64,6 +67,11 @@ export function Sites({ geral, busca, fase }: Props) {
         </label>
         <Seletor rotulo="Status" valor={f.status} lista={ops.status} mudar={(v) => mudar('status', v)} />
         <Seletor rotulo="Cidade" valor={f.cidade} lista={ops.cidade} mudar={(v) => mudar('cidade', v)} />
+        {eu && (
+          <button type="button" className={`btn ${meus ? 'primario' : ''}`} aria-pressed={meus} onClick={() => mudar('responsavel', meus ? '' : eu)}>
+            Meus leads
+          </button>
+        )}
         <Seletor rotulo="Responsável" valor={f.responsavel} lista={ops.responsavel} mudar={(v) => mudar('responsavel', v)} />
         <label><span className="sr">Ordenar</span>
           <select value={f.ordem} onChange={(e) => mudar('ordem', e.target.value)}>
@@ -90,6 +98,7 @@ export function Sites({ geral, busca, fase }: Props) {
                     <td data-rotulo="Cliente">
                       <a href={`#/sites/${encodeURIComponent(p.slug)}`} className="cliente" onClick={(e) => e.stopPropagation()}>{p.nome}</a>
                       {p.erro_sincronia && <span className="chip erro" title={p.erro_sincronia}>erro de sincronização</span>}
+                      {trabalhando.has(p.slug) && <Trabalhando a={trabalhando.get(p.slug)!} />}
                     </td>
                     <td data-rotulo="Status"><Status status={p.status} /></td>
                     <td data-rotulo="Cidade">{p.cidade || <span className="suave">—</span>}</td>

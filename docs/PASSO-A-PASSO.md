@@ -31,8 +31,11 @@ Peça ao Claude para fazer o commit e o push no `rodrgo07/Painel-Woods`, ou faç
 1. <https://supabase.com> → criar conta → **New project**: nome `woods-web`, região **São Paulo**, plano **Free**.
    Guarde a senha do banco num gerenciador de senhas.
 2. **SQL Editor** → **New query** → cole todo o arquivo `supabase/migrations/20261115000000_woods_web.sql` → **Run**.
-   Deve aparecer "Success".
+   Deve aparecer "Success". Numa query nova, faça o mesmo com `supabase/migrations/20261116000000_equipe.sql`.
+   (Já tinha rodado o primeiro antes? Rode só o segundo.)
 3. **Authentication** → **Users** → **Add user** → **Create new user**: seu e-mail, senha forte, marque **Auto Confirm User**.
+   Repita com o e-mail do sócio. Depois, no **SQL Editor**:
+   `select public.adicionar_membro('seu@email.com', 'R Host');` e `select public.adicionar_membro('email.do.socio@email.com', 'L Host');`
 4. **Authentication** → **Sign In / Providers** → desligue **Allow new users to sign up** → salvar.
 5. **Project Settings** → **API Keys**: anote a **Project URL** e a chave **anon** (`eyJ…`) ou **publishable**
    (`sb_publishable_…`). **Nunca** use a `service_role` nem a `sb_secret_…`.
@@ -50,11 +53,13 @@ Peça ao Claude para fazer o commit e o push no `rodrgo07/Painel-Woods`, ou faç
 
 ### D. Conectar o Painel Woods
 Painel Woods → **Configurações** → cartão **Woods Web** → URL, chave pública, e-mail e senha → **Conectar**.
+No PC do sócio, o mesmo, com a conta dele.
 Em até 1 minuto os leads aparecem no endereço do Cloudflare.
 
 ### E. Conferir
 - [ ] Endereço do Cloudflare numa janela anônima mostra só o login.
-- [ ] Entrando, a visão geral mostra os seus leads e "Desktop conectado".
+- [ ] Entrando, a visão geral mostra os leads dos dois e "Desktop conectado".
+- [ ] Com a conta do sócio, aparecem os mesmos leads, e em Sites o botão **Meus leads** filtra os dele.
 - [ ] O detalhe de um lead mostra os prints.
 - [ ] No celular, o mesmo endereço funciona.
 

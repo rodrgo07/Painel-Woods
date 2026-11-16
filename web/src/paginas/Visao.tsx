@@ -1,7 +1,7 @@
 import type { Geral } from '../lib/dados.ts';
-import { resumir, relativo, porResponsavel, fase, ROTULO_FASE, type Fase } from '../lib/regras.ts';
-import type { Projeto } from '../lib/tipos.ts';
-import { Aviso, Atualizado, Avatar, Carregando, ErroAtualizar, Icone, Integracao, Status } from '../componentes/ui.tsx';
+import { resumir, relativo, porResponsavel, emAndamento, fase, ROTULO_FASE, type Fase } from '../lib/regras.ts';
+import type { Andamento, Projeto } from '../lib/tipos.ts';
+import { Aviso, Atualizado, Avatar, Carregando, ErroAtualizar, Icone, Integracao, Status, Trabalhando } from '../componentes/ui.tsx';
 
 interface Props { geral: { dados: Geral | null; erro: string; carregando: boolean; em: number; recarregar: () => void } }
 
@@ -24,6 +24,8 @@ export function Visao({ geral }: Props) {
   const problemas = dados.projetos.filter((p) => p.erro_sincronia);
   const responsaveis = porResponsavel(dados.projetos);
   const maiorFase = Math.max(1, ...FASES.map((f) => r[f]));
+  const trabalhando = emAndamento(dados.andamento, dados.dispositivos);
+  const agora = dados.projetos.filter((p) => trabalhando.has(p.slug));
 
   return (
     <>
@@ -62,11 +64,21 @@ export function Visao({ geral }: Props) {
         <section className="secao">
           <header className="secao-topo"><h2>Atualizados recentemente</h2><a href="#/sites" className="btn pequeno">Ver todos</a></header>
           {recentes.length ? (
-            <div className="cards-projeto">{recentes.map((p) => <CardProjeto key={p.slug} p={p} />)}</div>
+            <div className="cards-projeto">{recentes.map((p) => <CardProjeto key={p.slug} p={p} a={trabalhando.get(p.slug)} />)}</div>
           ) : <Aviso tipo="vazio" titulo="Nenhum projeto ainda">Conecte o Painel Woods ao Woods Web nas configurações do app. Os leads aparecem aqui na primeira sincronização.</Aviso>}
         </section>
 
         <div className="pilha">
+          {agora.length > 0 && (
+            <section className="painel">
+              <header className="painel-topo"><h2>Claude trabalhando agora</h2></header>
+              <ul className="lista">
+                {agora.map((p) => (
+                  <li key={p.slug}><a href={`#/sites/${encodeURIComponent(p.slug)}`}><span className="lista-nome">{p.nome}<small>{trabalhando.get(p.slug)!.quem || 'Alguém'} · {trabalhando.get(p.slug)!.computador || 'PC'} · desde {relativo(trabalhando.get(p.slug)!.desde)}</small></span></a></li>
+                ))}
+              </ul>
+            </section>
+          )}
           <Integracao dispositivos={dados.dispositivos} />
           {responsaveis.length > 0 && (
             <section className="painel">
@@ -103,7 +115,7 @@ export function Visao({ geral }: Props) {
   );
 }
 
-function CardProjeto({ p }: { p: Projeto }) {
+function CardProjeto({ p, a }: { p: Projeto; a?: Andamento }) {
   return (
     <a className={`card-projeto fase-borda-${fase(p.status)}`} href={`#/sites/${encodeURIComponent(p.slug)}`}>
       <div className="card-linha">
@@ -119,6 +131,7 @@ function CardProjeto({ p }: { p: Projeto }) {
           <Status status={p.status} />
           {p.cidade && <span className="chip"><Icone nome="local" />{p.cidade}</span>}
           {p.erro_sincronia && <span className="chip erro">erro de sincronização</span>}
+          {a && <Trabalhando a={a} />}
         </span>
         {p.responsavel && <Avatar nome={p.responsavel} pequeno />}
       </div>
