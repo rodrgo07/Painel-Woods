@@ -10,10 +10,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, net, powerMonitor, protocol, safeStorage, session, shell } from 'electron';
 import * as painel from './painel.js';
 import * as woods from './woods.js';
 import { MODELOS, validar, ler, salvar, caminhoSeguro, importarConversas, limpar, iniciarLog, registrar } from './nucleo.js';
+import { criarServico } from './sincronia/servico.js';
 
 const AQUI = import.meta.dirname;
 if (!app.isPackaged) { try { process.loadEnvFile(path.join(AQUI, '.env')); } catch { /* .env é opcional, só para quem desenvolve */ } }
@@ -61,7 +62,19 @@ const comGit = (aoLer) => ({ ...F, env: env(), aoLer });
 const MCP_NAVEGADOR = { chrome: [], edge: ['--browser', 'msedge'], chromium: ['--browser', 'chromium'] };
 painel.ctx.woods = WOODS;
 painel.ctx.dados = DADOS;
-painel.ctx.enviar = (slug, linha) => { if (win && !win.isDestroyed()) win.webContents.send('painel:evento', slug, linha); };
+// Woods Web: só lê o WOODS e o tipo dos eventos da conversa; a sessão do Supabase fica cifrada e nunca vai para a página
+const nuvem = criarServico({
+  dados: DADOS, woods: WOODS, fetch: (...a) => net.fetch(...a), versao: app.getVersion(), maquina: os.hostname(), registrar,
+  cofre: {
+    disponivel: () => safeStorage.isEncryptionAvailable(),
+    cifrar: (t) => safeStorage.encryptString(t).toString('base64'),
+    decifrar: (b) => (b ? safeStorage.decryptString(Buffer.from(b, 'base64')) : ''),
+  },
+});
+painel.ctx.enviar = (slug, linha) => {
+  if (win && !win.isDestroyed()) win.webContents.send('painel:evento', slug, linha);
+  nuvem.aoEvento(slug, linha);
+};
 painel.ctx.opcoes = () => ({
   env: env(), modelo: cfg.modelo, claude: CLAUDE, node: F.node,
   mcp: { type: 'stdio', command: F.node, args: [path.join(MODULOS, '@playwright', 'mcp', 'cli.js'), ...(MCP_NAVEGADOR[navegador().tipo] || [])] },
@@ -170,6 +183,12 @@ const ACOES = {
     return { importadas: r.canceled ? -1 : importarConversas(r.filePaths[0], path.join(DADOS, 'conversas')) };
   },
   abrirLogs() { shell.openPath(LOGS); },
+
+  // Woods Web (Supabase): a senha só passa por aqui para entrar; fica guardado só o token de renovação, cifrado
+  nuvem: () => nuvem.situacao(),
+  nuvemConectar: (d) => nuvem.conectar(d),
+  nuvemDesconectar: () => nuvem.desconectar(),
+  nuvemSincronizar: () => nuvem.agora(),
 };
 
 ipcMain.handle('painel', async (e, acao, dados) => {
@@ -215,7 +234,7 @@ app.on('web-contents-created', (_e, wc) => {
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.on('window-all-closed', () => app.quit());
 // Ao fechar: para a conversa e derruba o Claude, o Playwright e qualquer git ou npm em andamento
-app.on('will-quit', () => { painel.encerrar(); woods.matarFilhos(); });
+app.on('will-quit', () => { painel.encerrar(); woods.matarFilhos(); nuvem.parar(); });
 
 app.whenReady().then(() => {
   protocol.handle('painel', servir);
@@ -227,6 +246,8 @@ app.whenReady().then(() => {
   });
   win.on('closed', () => app.quit());
   win.loadURL('painel://app/');
+  nuvem.iniciar();
+  powerMonitor.on('resume', () => { nuvem.agora(); }); // o PC acordou: tenta o que ficou pendente
   // Só confere se há novidades; sem janela de login nesta hora. Atualizar é pelo botão.
   if (woods.checar(WOODS).clonado) {
     woods.novidades(WOODS, { ...F, env: { ...env(), GCM_INTERACTIVE: 'never' } })

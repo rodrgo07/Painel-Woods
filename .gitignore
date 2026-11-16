@@ -3,3 +3,6 @@ dados/
 .env
 vendor/
 dist/
+.env.local
+.env.*.local
+reserva/

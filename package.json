@@ -35,6 +35,7 @@
       "painel.js",
       "woods.js",
       "nucleo.js",
+      "sincronia/**/*",
       "public/**/*",
       "package.json"
     ],

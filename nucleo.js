@@ -54,7 +54,7 @@ export function importarConversas(origem, destino) {
 }
 
 // ---------- Log (%APPDATA%\PainelWoods\logs) ----------
-const SEGREDO = /\b(sk-ant-[\w-]{8,}|gh[pousr]_\w{20,}|github_pat_\w{20,})/g;
+const SEGREDO = /\b(sk-ant-[\w-]{8,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|sb_secret_[\w-]{10,})/g;
 /** Tira chaves e tokens de um texto antes de gravar ou mostrar */
 export const limpar = (t) => String(t).replace(SEGREDO, '[segredo]');
 

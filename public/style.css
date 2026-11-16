@@ -213,3 +213,7 @@ main { min-width: 0; height: 100vh; }
   .palco-conteudo { padding: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* Woods Web (public/nuvem.js) */
+#form-nuvem { display: flex; flex-direction: column; gap: 14px; }
+#nuvem-info:empty { display: none; }

@@ -52,6 +52,7 @@ Tudo em `%APPDATA%\PainelWoods`. Nada é gravado na pasta de instalação.
 | Conversas e sessões | `conversas\<slug>.jsonl`, `sessoes.json` |
 | Erros | `logs\painel-AAAA-MM-DD.log` |
 | Chromium baixado (se precisou) | `navegadores\` |
+| Woods Web: conexão (token cifrado) e fila de envio | `nuvem.json`, `nuvem-estado.json` |
 
 Dois itens ficam fora dessa pasta, por conta de quem os guarda: o login do GitHub (Gerenciador de Credenciais do
 Windows) e o login da conta do Claude (`%USERPROFILE%\.claude`, gravado pelo próprio Claude Code).
@@ -65,7 +66,7 @@ npm start
 ```
 - `npm install`: se o Electron não baixar o binário sozinho (npm novo bloqueia scripts de instalação), rode `npx install-electron`.
 - `npm run ferramentas`: baixa o Node e o PortableGit para `vendor/`, conferindo o SHA-256 (uma vez só).
-- `npm test`: slug, ficha, bloqueio de `../`, configuração, checagens do WOODS e atualização sem perder trabalho local.
+- `npm test`: slug, ficha, bloqueio de `../`, configuração, checagens do WOODS, atualização sem perder trabalho local e a sincronização do Woods Web (Supabase falso, sem rede).
 - `.env` (opcional, veja `.env.exemplo`): só no `npm start`. O app instalado não lê `.env`.
 
 ### Gerar o instalador
@@ -82,13 +83,26 @@ set CSC_KEY_PASSWORD=senha-do-certificado
 ```
 Não coloque o certificado nem a senha no repositório.
 
+## Woods Web (opcional)
+Painel online e privado com todos os sites, para consultar do celular ou de outro computador sem o PC ligado.
+O Painel Woods continua igual; um serviço à parte (`sincronia/`) só lê as fichas e os prints do WOODS e envia
+os metadados ao Supabase. Conversas, chaves e credenciais nunca saem do computador. Sem internet, os envios
+esperam numa fila e seguem quando a conexão volta.
+
+- Configurar tudo (Supabase, conta, conexão do app): [docs/woods-web.md](docs/woods-web.md)
+- Publicar o painel web no Cloudflare Pages: [docs/cloudflare-pages.md](docs/cloudflare-pages.md)
+- No app: **Configurações** → cartão **Woods Web** → URL, chave pública, e-mail e senha → **Conectar**.
+
 ## Arquivos
 - `main.js`: janela, protocolo `painel://`, ações que a página pode pedir e encerramento dos processos
 - `preload.cjs`: a única ponte entre a página e o app (`pedir` e `ouvir`)
 - `painel.js`: leads e conversa com o Claude (Agent SDK)
 - `woods.js`: WOODS (clonar, instalar, atualizar), navegador e ferramentas embutidas
 - `nucleo.js`: configuração, caminho seguro de arquivos e log
-- `public/`: a página (`index.html`, `app.js`, `style.css`) e `util.js` (funções usadas pelos dois lados)
+- `sincronia/`: envio ao Woods Web (leitura do WOODS, fila offline, cliente do Supabase). Não mexe nos leads nem no Claude
+- `supabase/migrations/`: tabelas, índices e políticas RLS do Woods Web
+- `web/`: o Woods Web (React + Vite), publicado à parte no Cloudflare Pages
+- `public/`: a página (`index.html`, `app.js`, `style.css`), `nuvem.js` (cartão do Woods Web) e `util.js` (funções usadas pelos dois lados)
 - `scripts/ferramentas.js`: baixa o que vai em `vendor/`
 - `build/`: ícone e a pergunta do desinstalador
 
@@ -96,4 +110,5 @@ Não coloque o certificado nem a senha no repositório.
 - A página roda isolada (`contextIsolation`, `sandbox`, sem Node) e com CSP. Não há servidor HTTP nem porta aberta.
 - A prévia dos sites dos leads fica em outra origem (`painel://site`) e não alcança as ações do painel.
 - Chave da API cifrada pelo Windows; chaves e tokens são cortados do que vai para o log e para as conversas.
+- Woods Web: o app usa só a chave pública do Supabase (recusa a service_role); a sessão fica cifrada pelo Windows e só no processo principal, nunca na página. A senha não é guardada.
 - Uma instância só. Ao fechar, o app encerra o Claude, o Playwright e os processos que abriu.

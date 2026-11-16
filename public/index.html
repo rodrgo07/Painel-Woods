@@ -95,6 +95,25 @@
           <div class="botoes"><button class="btn" type="submit">Salvar</button></div>
         </form>
 
+        <article class="cartao passo" id="p-nuvem">
+          <h2>Woods Web (opcional) <span class="situacao"></span></h2>
+          <p class="suave">Envia os dados dos leads (sem as conversas) para o painel online no Supabase, para consultar de qualquer lugar.</p>
+          <ul id="nuvem-info" class="checagens"></ul>
+          <form id="form-nuvem">
+            <label>URL do projeto Supabase<input id="n-url" required placeholder="https://xxxx.supabase.co" autocomplete="off"></label>
+            <label>Chave pública (anon ou publishable)<input id="n-chave" required placeholder="eyJ… ou sb_publishable_…" autocomplete="off"></label>
+            <div class="linha">
+              <label>E-mail<input id="n-email" type="email" required autocomplete="off"></label>
+              <label>Senha<input id="n-senha" type="password" required autocomplete="off"></label>
+            </div>
+            <div class="botoes"><button class="btn primario" type="submit">Conectar</button></div>
+          </form>
+          <div class="botoes" id="nuvem-acoes" hidden>
+            <button class="btn" type="button" data-nuvem="nuvemSincronizar">Sincronizar agora</button>
+            <button class="btn" type="button" data-nuvem="nuvemDesconectar">Desconectar</button>
+          </div>
+        </article>
+
         <article class="cartao">
           <h2>Dados e diagnóstico</h2>
           <div class="botoes">
@@ -183,5 +202,6 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
   <script type="module" src="app.js"></script>
+  <script type="module" src="nuvem.js"></script>
 </body>
 </html>
