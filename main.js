@@ -11,6 +11,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, Menu, dialog, ipcMain, net, powerMonitor, protocol, safeStorage, session, shell } from 'electron';
+import updater from 'electron-updater';
 import * as painel from './painel.js';
 import * as woods from './woods.js';
 import { MODELOS, validar, ler, salvar, caminhoSeguro, importarConversas, limpar, iniciarLog, registrar } from './nucleo.js';
@@ -80,6 +81,19 @@ painel.ctx.opcoes = () => ({
   mcp: { type: 'stdio', command: F.node, args: [path.join(MODULOS, '@playwright', 'mcp', 'cli.js'), ...(MCP_NAVEGADOR[navegador().tipo] || [])] },
 });
 
+// ---------- Atualização do próprio app, pelos releases do GitHub (build.publish no package.json) ----------
+const { autoUpdater } = updater;
+const PORTATIL = Boolean(process.env.PORTABLE_EXECUTABLE_DIR); // o portátil não se atualiza: só avisa e abre a página
+const RELEASES = 'https://github.com/rodrgo07/Painel-Woods/releases/latest';
+const versaoNova = { versao: '', pronta: false };
+autoUpdater.autoDownload = !PORTATIL; // baixa em segundo plano; se ninguém clicar, instala ao fechar o app
+autoUpdater.logger = null;
+autoUpdater.forceDevUpdateConfig = Boolean(process.env.PAINEL_TESTAR_ATUALIZACAO); // só para testar com dev-app-update.yml
+autoUpdater.on('update-available', (i) => { versaoNova.versao = i.version; });
+autoUpdater.on('update-downloaded', (i) => { versaoNova.versao = i.version; versaoNova.pronta = true; });
+autoUpdater.on('error', (e) => registrar(`atualização do app: ${e.message}`));
+const procurarVersao = () => autoUpdater.checkForUpdates().catch((e) => registrar(`atualização do app: ${e.message}`));
+
 /** O que falta para o painel funcionar. Lista vazia = pronto */
 function faltas() {
   const w = woods.checar(WOODS);
@@ -128,7 +142,16 @@ const ACOES = {
       temLogin: temLogin(), temChave: Boolean(cfg.chaveApi), falta: faltas(), novidades, tarefa,
       config: { modelo: cfg.modelo, gitNome: cfg.gitNome, gitEmail: cfg.gitEmail, navegador: cfg.navegador }, modelos: MODELOS,
       rodando: painel.rodando(), leads: w.clonado ? painel.leads() : [],
+      versaoNova: versaoNova.versao && (versaoNova.pronta || PORTATIL) ? { ...versaoNova, portatil: PORTATIL } : null,
     };
+  },
+  /** Fecha, instala a versão baixada sem perguntar nada e abre de novo. No portátil, abre a página do release */
+  atualizarApp() {
+    if (PORTATIL) return void shell.openExternal(RELEASES);
+    if (!versaoNova.pronta) throw new Error('A nova versão ainda está baixando.');
+    if (tarefa) throw new Error(`Espere terminar: ${tarefa}.`);
+    if (painel.rodando()) throw new Error(painel.ocupado());
+    setImmediate(() => autoUpdater.quitAndInstall(true, true));
   },
   lead: ({ slug }) => painel.lead(slug, true),
   eventos: ({ slug }) => painel.eventos(slug),
@@ -189,7 +212,51 @@ const ACOES = {
   nuvemConectar: (d) => nuvem.conectar(d),
   nuvemDesconectar: () => nuvem.desconectar(),
   nuvemSincronizar: () => nuvem.agora(),
+  /** Seletor de elemento na prévia: o site está em outra origem, então o script entra pelo main. Esc ou cancelar devolve null */
+  escolherElemento({ cancelar }) {
+    const f = win.webContents.mainFrame.frames.find((q) => q.url.startsWith('painel://site/'));
+    if (!f) throw new Error('Abra a variante A ou B para escolher um elemento.');
+    return f.executeJavaScript(cancelar ? 'window.__painelFim?.(null)' : `(${escolher})()`, true);
+  },
 };
+
+/** Roda dentro da prévia: destaca o que está sob o mouse e devolve o elemento clicado */
+function escolher() {
+  window.__painelFim?.(null);
+  return new Promise((pronto) => {
+    // Tag própria e `all:initial`: o CSS do site (transition em *, regras de div) não pega na caixa
+    const caixa = document.createElement('painel-caixa');
+    caixa.style.cssText = 'all:initial;position:fixed;z-index:2147483647;pointer-events:none;outline:2px solid #e0484f;background:rgba(168,31,39,.15);transition:none';
+    document.documentElement.append(caixa);
+    const nome = (el) => el.tagName.toLowerCase() + (el.id ? `#${el.id}` : [...el.classList].slice(0, 2).map((c) => `.${c}`).join(''));
+    const mover = (e) => {
+      const r = e.target.getBoundingClientRect();
+      Object.assign(caixa.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+    };
+    const clicar = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const el = e.target;
+      const caminho = [];
+      for (let p = el; p && p !== document.body && caminho.length < 4; p = p.parentElement) caminho.unshift(nome(p));
+      const texto = (el.innerText || el.getAttribute('alt') || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+      fim({ seletor: caminho.join(' > '), texto: texto.length > 100 ? `${texto.slice(0, 100)}…` : texto });
+    };
+    const tecla = (e) => { if (e.key === 'Escape') fim(null); };
+    const fim = (v) => {
+      removeEventListener('mousemove', mover, true);
+      removeEventListener('click', clicar, true);
+      removeEventListener('keydown', tecla, true);
+      caixa.remove();
+      window.__painelFim = null;
+      pronto(v);
+    };
+    window.__painelFim = fim;
+    addEventListener('mousemove', mover, true);
+    addEventListener('click', clicar, true);
+    addEventListener('keydown', tecla, true);
+  });
+}
 
 ipcMain.handle('painel', async (e, acao, dados) => {
   try {
@@ -241,13 +308,17 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, _permissao, responder) => responder(false)); // câmera, local etc.: nunca
   if (app.isPackaged) Menu.setApplicationMenu(null);
   win = new BrowserWindow({
-    width: 1440, height: 900, minWidth: 390, minHeight: 560, backgroundColor: '#0b0b0b', autoHideMenuBar: true,
+    width: 1440, height: 900, minWidth: 390, minHeight: 560, backgroundColor: '#0c0c0d', autoHideMenuBar: true,
     webPreferences: { preload: path.join(AQUI, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   win.on('closed', () => app.quit());
   win.loadURL('painel://app/');
   nuvem.iniciar();
   powerMonitor.on('resume', () => { nuvem.agora(); }); // o PC acordou: tenta o que ficou pendente
+  if (app.isPackaged || autoUpdater.forceDevUpdateConfig) {
+    procurarVersao();
+    setInterval(procurarVersao, 60 * 60 * 1000); // quem deixa o app aberto o dia todo também fica sabendo
+  }
   // Só confere se há novidades; sem janela de login nesta hora. Atualizar é pelo botão.
   if (woods.checar(WOODS).clonado) {
     woods.novidades(WOODS, { ...F, env: { ...env(), GCM_INTERACTIVE: 'never' } })
