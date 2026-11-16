@@ -1,8 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 // Só valores públicos. A chave anon/publishable vai para o navegador; quem protege os dados é o RLS.
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const chave = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/+$/, '');
+const chave = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
+// Só o endereço do projeto: https://<id>.supabase.co (ou http://localhost para desenvolver), sem espaço nem caminho
+const URL_OK = /^(https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/i;
 
 function papel(jwt: string) {
   try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role as string; } catch { return ''; }
@@ -11,6 +13,8 @@ function papel(jwt: string) {
 /** Mensagem para a tela quando o build foi feito sem as variáveis (ou com a chave errada) */
 export const erroConfig = !url || !chave
   ? 'Faltam VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no build. Veja web/.env.example.'
+  : !URL_OK.test(url)
+    ? `VITE_SUPABASE_URL inválida: "${url}". Use só https://<id-do-projeto>.supabase.co, sem espaço nem nada depois.`
   : /^sb_secret_/.test(chave) || papel(chave) === 'service_role'
     ? 'A chave configurada é secreta. Use a chave anon (pública) e troque a service_role no Supabase.'
     : '';
