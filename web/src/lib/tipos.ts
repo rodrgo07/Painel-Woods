@@ -17,6 +17,23 @@ export interface Projeto {
   atualizado_local_em: string | null;
   erro_sincronia: string | null;
   sincronizado_em: string;
+  removido_em?: string | null;
+}
+
+/** Quem está com o Claude num lead agora (tabela andamento) */
+export interface Andamento {
+  projeto_slug: string;
+  dispositivo_id: string;
+  quem: string | null;
+  computador: string | null;
+  ativo: boolean;
+  desde: string;
+}
+
+/** Pessoa da equipe (tabela membros). nome = o "Responsável" das fichas */
+export interface Membro {
+  usuario_id: string;
+  nome: string | null;
 }
 
 export type TipoEvento =

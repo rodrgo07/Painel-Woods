@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { fase, integracao, iniciais, relativo, dataHora, ROTULO_FASE } from '../lib/regras.ts';
-import type { Dispositivo } from '../lib/tipos.ts';
+import { fase, integracao, iniciais, relativo, dataHora, textoAndamento, ROTULO_FASE } from '../lib/regras.ts';
+import type { Andamento, Dispositivo } from '../lib/tipos.ts';
 
 // Ícones de traço (24×24), desenhados aqui: sem biblioteca de ícones
 const ICONES = {
@@ -70,14 +70,21 @@ const TEXTO_DESKTOP = {
   desconectado: ['Desktop desconectado', 'A conta foi desconectada no Painel Woods.'],
 } as const;
 
+const CURTO = { nenhum: 'nunca conectado', online: 'conectado', 'sem-contato': 'sem contato', desconectado: 'desconectado' } as const;
+
+/** Claude trabalhando num lead agora (em outro PC da equipe ou neste) */
+export function Trabalhando({ a }: { a: Andamento }) {
+  return <span className="chip trabalhando" title={`Desde ${dataHora(a.desde)}`}><i aria-hidden="true" />{textoAndamento(a)}</span>;
+}
+
 export function Integracao({ dispositivos, compacto = false }: { dispositivos: Dispositivo[]; compacto?: boolean }) {
-  const { situacao, dispositivo: d } = integracao(dispositivos);
+  const { situacao, dispositivo: d, todos } = integracao(dispositivos);
   const [titulo, dica] = TEXTO_DESKTOP[situacao];
   if (compacto) {
     return (
-      <div className={`integracao-mini sit-${situacao}`} title={dica || undefined}>
+      <div className={`integracao-mini sit-${situacao}`} title={todos.map((x) => `${x.dispositivo.nome || 'PC'}: ${CURTO[x.situacao]}`).join('\n') || dica || undefined}>
         <i aria-hidden="true" />
-        <span>{titulo}{d ? <small>{relativo(d.ultimo_contato)}</small> : null}</span>
+        <span>{titulo}{d ? <small>{todos.length > 1 ? `${todos.filter((x) => x.situacao === 'online').length} de ${todos.length} PCs` : relativo(d.ultimo_contato)}</small> : null}</span>
       </div>
     );
   }
@@ -85,6 +92,13 @@ export function Integracao({ dispositivos, compacto = false }: { dispositivos: D
     <section className={`painel integracao sit-${situacao}`} aria-label="Integração com o desktop">
       <header className="painel-topo"><h2>Integração</h2><span className="selo-sit"><i aria-hidden="true" />{titulo}</span></header>
       {dica && <p className="suave pequeno">{dica}</p>}
+      {todos.length > 1 && (
+        <ul className="pcs">
+          {todos.map(({ dispositivo: x, situacao: s }) => (
+            <li key={x.id} className={`sit-${s}`}><i aria-hidden="true" />{x.nome || 'PC'}<small>{CURTO[s]} · {relativo(x.ultimo_contato)}</small></li>
+          ))}
+        </ul>
+      )}
       {d && (
         <dl className="dados">
           <div><dt>Computador</dt><dd>{d.nome || '—'}{d.versao_app ? <span className="suave"> · v{d.versao_app}</span> : ''}</dd></div>

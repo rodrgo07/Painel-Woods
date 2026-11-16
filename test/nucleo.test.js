@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { validar, ler, salvar, caminhoSeguro, importarConversas, limpar, MODELOS } from '../nucleo.js';
-import { checar, acharNavegador, ambiente, ferramentas, rodar, novidades, atualizar } from '../woods.js';
+import { validar, ler, salvar, caminhoSeguro, importarConversas, limpar, MODELOS, responsaveis, maisNova } from '../nucleo.js';
+import { checar, acharNavegador, ambiente, ferramentas, rodar, novidades, atualizar, mudaDependencias } from '../woods.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'painel-teste-'));
 const criar = (base, ...arqs) => arqs.forEach((a) => {
@@ -25,17 +25,34 @@ test('caminhoSeguro bloqueia ../ e caminho absoluto', () => {
 });
 
 test('configuração: padrões, validação e gravação', () => {
-  assert.deepEqual(validar(), { modelo: 'claude-opus-5-5', gitNome: '', gitEmail: '', navegador: '', chaveApi: '' });
+  assert.deepEqual(validar(), { modelo: 'claude-opus-5-5', gitNome: '', gitEmail: '', navegador: '', chaveApi: '', responsaveis: ['R Host', 'L Host'] });
   assert.ok(MODELOS.includes('claude-fable-5-2'));
   const v = validar({ modelo: 'gpt', gitNome: ' Rodrigo\nSilva ', gitEmail: 'sem-arroba', navegador: 'firefox', chaveApi: 7, outra: 1 });
-  assert.deepEqual(v, { modelo: 'claude-opus-5-5', gitNome: 'Rodrigo Silva', gitEmail: '', navegador: '', chaveApi: '' });
+  assert.deepEqual(v, { modelo: 'claude-opus-5-5', gitNome: 'Rodrigo Silva', gitEmail: '', navegador: '', chaveApi: '', responsaveis: ['R Host', 'L Host'] });
 
   const arq = path.join(tmp(), 'config.json');
   assert.equal(ler(arq).modelo, 'claude-opus-5-5', 'sem arquivo: padrão');
   salvar(arq, { modelo: 'claude-fable-5-2', gitNome: 'R', gitEmail: 'r@woods.com', navegador: 'edge' });
-  assert.deepEqual(ler(arq), { modelo: 'claude-fable-5-2', gitNome: 'R', gitEmail: 'r@woods.com', navegador: 'edge', chaveApi: '' });
+  assert.deepEqual(ler(arq), { modelo: 'claude-fable-5-2', gitNome: 'R', gitEmail: 'r@woods.com', navegador: 'edge', chaveApi: '', responsaveis: ['R Host', 'L Host'] });
   fs.writeFileSync(arq, '{quebrado');
   assert.equal(ler(arq).modelo, 'claude-opus-5-5', 'arquivo quebrado: padrão');
+});
+
+test('responsáveis: lista das configurações, sem repetidos, nunca vazia', () => {
+  assert.deepEqual(responsaveis(' R Host , L Host,,R Host '), ['R Host', 'L Host']);
+  assert.deepEqual(responsaveis(['Ana', 'Bia\nC']), ['Ana', 'Bia C']);
+  assert.deepEqual(responsaveis(''), ['R Host', 'L Host'], 'vazio volta ao padrão');
+  assert.equal(responsaveis(Array.from({ length: 20 }, (_, i) => `P${i}`)).length, 10);
+  assert.deepEqual(validar({ responsaveis: 'Ana, Bia' }).responsaveis, ['Ana', 'Bia']);
+});
+
+test('versão nova do app: só x.y.z maior que a atual', () => {
+  assert.equal(maisNova('v1.1.0', '1.0.0'), true);
+  assert.equal(maisNova('1.10.0', '1.9.3'), true);
+  assert.equal(maisNova('1.0.0', '1.0.0'), false);
+  assert.equal(maisNova('0.9.9', '1.0.0'), false);
+  assert.equal(maisNova('v2.0.0-beta', '1.0.0'), false, 'pré-lançamento não avisa');
+  assert.equal(maisNova('', '1.0.0'), false);
 });
 
 test('importarConversas copia só conversas de leads e não troca as que já existem', () => {
@@ -96,6 +113,7 @@ test('atualizar o WOODS não mexe em trabalho local de um lead em andamento', { 
   gravar(copia, 'lead.txt', 'em andamento');
   await publicar('modelo.txt', 'v2');
   assert.equal(await novidades(copia, o), 1);
+  assert.equal(await mudaDependencias(copia, o), false, 'pode atualizar sozinho');
   assert.deepEqual(await atualizar(copia, o), { commits: 1, deps: false });
   assert.equal(fs.readFileSync(path.join(copia, 'modelo.txt'), 'utf8'), 'v2');
   assert.equal(fs.readFileSync(path.join(copia, 'lead.txt'), 'utf8'), 'em andamento');
@@ -108,6 +126,8 @@ test('atualizar o WOODS não mexe em trabalho local de um lead em andamento', { 
   // Mudou o package.json: avisa que as dependências precisam ser instaladas de novo
   await git(copia, 'checkout', '-q', '--', 'lead.txt');
   await publicar('package.json', '{}');
+  assert.equal(await novidades(copia, o), 2);
+  assert.equal(await mudaDependencias(copia, o), true, 'precisa do npm ci: fica para o botão');
   assert.deepEqual(await atualizar(copia, o), { commits: 2, deps: true });
 });
 

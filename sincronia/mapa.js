@@ -8,7 +8,6 @@ import crypto from 'node:crypto';
 import { SLUG_OK, lerFicha } from '../public/util.js';
 
 export const PRINTS = ['a-390', 'b-390', 'a-1440', 'b-1440'];
-const mtime = (f) => Math.round(fs.statSync(f, { throwIfNoEntry: false })?.mtimeMs || 0);
 const texto = (v, max) => (String(v ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, max) || null);
 
 /** Instagram da ficha ("- Instagram: https://www.instagram.com/x/ (@x, 508 seguidores)" ou "@x") → URL do perfil, ou null */
@@ -34,14 +33,62 @@ export function repositorio(woods) {
   }
 }
 
-/** Um lead do WOODS como ele está no disco agora */
-export function lerProjeto(woods, slug, repo = repositorio(woods)) {
+/**
+ * Datas pelo git. Ficha ou print igual ao último commit usa a data desse commit, e não a do arquivo:
+ * um clone novo ou um pull trocam a data do arquivo sem mudar o conteúdo, e aí um PC com o WOODS atrasado
+ * pareceria ter a versão mais nova. Arquivo com mudança local (ou fora do git) usa a data do arquivo.
+ * A criação é o primeiro commit da ficha (no lugar da data do arquivo, que reinicia num clone novo).
+ *
+ * git(args) → stdout (roda dentro do WOODS). Devolve ler() → quando(rel, st) → { atualizado, criado } em ms.
+ * O histórico só é relido quando o HEAD muda.
+ */
+export function criarDatasGit(git) {
+  let cache = { head: '', ultima: new Map(), primeira: new Map() };
+  const ALVOS = ['vault/20-leads/*.md', 'sites/*/prints/*.jpg'];
+  return function ler() {
+    const head = git(['rev-parse', 'HEAD']).trim();
+    if (head !== cache.head) {
+      const ultima = new Map();
+      const primeira = new Map();
+      let data = 0;
+      const log = git(['-c', 'core.quotepath=off', 'log', '--format=%x00%cI', '--name-only', '--no-renames', '--', ...ALVOS]);
+      for (const linha of log.split('\n')) {
+        if (linha.startsWith('\0')) { data = Date.parse(linha.slice(1).trim()) || 0; continue; }
+        const f = linha.trim();
+        if (!f || !data) continue;
+        if (!ultima.has(f)) ultima.set(f, data); // o log vem do mais novo para o mais velho
+        primeira.set(f, data);
+      }
+      cache = { head, ultima, primeira };
+    }
+    const status = git(['-c', 'core.quotepath=off', 'status', '--porcelain', '-z', '--untracked-files=all', '--', 'vault/20-leads', 'sites/*/prints']);
+    const sujos = new Set(status.split('\0').filter(Boolean).map((e) => e.slice(3)));
+    const { ultima, primeira } = cache;
+    return (rel, st) => {
+      const mtime = Math.round(st.mtimeMs);
+      return {
+        atualizado: sujos.has(rel) || !ultima.has(rel) ? mtime : ultima.get(rel),
+        criado: primeira.get(rel) ?? Math.round(st.birthtimeMs || st.mtimeMs),
+      };
+    };
+  };
+}
+
+/** Sem git: a data do arquivo */
+const pelaData = (_rel, st) => ({ atualizado: Math.round(st.mtimeMs), criado: Math.round(st.birthtimeMs || st.mtimeMs) });
+
+/** Um lead do WOODS como ele está no disco agora. quando: veja criarDatasGit */
+export function lerProjeto(woods, slug, repo = repositorio(woods), quando = pelaData) {
   const ficha = path.join(woods, 'vault', '20-leads', `${slug}.md`);
   const md = fs.readFileSync(ficha, 'utf8');
-  const st = fs.statSync(ficha);
+  const datas = quando(`vault/20-leads/${slug}.md`, fs.statSync(ficha));
   const f = lerFicha(md);
   const pasta = path.join(woods, 'sites', slug);
   const tem = (...p) => fs.existsSync(path.join(pasta, ...p));
+  const print = (n) => {
+    const st = fs.statSync(path.join(pasta, 'prints', `${n}.jpg`), { throwIfNoEntry: false });
+    return st ? quando(`sites/${slug}/prints/${n}.jpg`, st).atualizado : 0;
+  };
   return {
     slug,
     nome: texto(f.nome, 300) || slug,
@@ -55,27 +102,26 @@ export function lerProjeto(woods, slug, repo = repositorio(woods)) {
     url_a: f.links.a || null,
     url_b: f.links.b || null,
     repositorio_url: repo && fs.existsSync(pasta) ? `${repo.base}/tree/${repo.ramo}/sites/${slug}` : null,
-    // shortcut: a criação é a data do arquivo da ficha; um clone novo do WOODS a reinicia. Ler do `git log` se precisar da data real
-    criado_local_em: new Date(Math.round(st.birthtimeMs || st.mtimeMs)).toISOString(),
-    atualizado_local_em: new Date(Math.round(st.mtimeMs)).toISOString(),
-    prints: Object.fromEntries(PRINTS.map((n) => [n, mtime(path.join(pasta, 'prints', `${n}.jpg`))]).filter(([, v]) => v)),
+    criado_local_em: new Date(datas.criado).toISOString(),
+    atualizado_local_em: new Date(datas.atualizado).toISOString(),
+    prints: Object.fromEntries(PRINTS.map((n) => [n, print(n)]).filter(([, v]) => v)),
   };
 }
 
 /** Todos os leads do WOODS (fichas válidas em vault/20-leads, sem os modelos _*.md) */
-export function lerProjetos(woods) {
+export function lerProjetos(woods, quando = pelaData) {
   const dir = path.join(woods, 'vault', '20-leads');
   if (!fs.existsSync(dir)) return [];
   const repo = repositorio(woods);
   return fs.readdirSync(dir)
     .filter((f) => f.endsWith('.md') && !f.startsWith('_') && SLUG_OK.test(f.slice(0, -3)))
-    .map((f) => lerProjeto(woods, f.slice(0, -3), repo));
+    .map((f) => lerProjeto(woods, f.slice(0, -3), repo, quando));
 }
 
 /** Linha da tabela projetos (sem o owner_id, que entra na hora de enviar) */
 export function paraLinha(p, erro = null) {
   const { prints, ...linha } = p;
-  return { ...linha, erro_sincronia: erro ? String(erro).slice(0, 500) : null };
+  return { ...linha, removido_em: null, erro_sincronia: erro ? String(erro).slice(0, 500) : null };
 }
 
 /** uuid estável a partir de um texto: o mesmo evento gera sempre o mesmo id (reenvio não duplica) */

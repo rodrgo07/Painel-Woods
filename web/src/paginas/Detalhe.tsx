@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { carregarDetalhe, type Detalhe as D } from '../lib/dados.ts';
 import { usePeriodico } from '../lib/ganchos.ts';
-import { descreverEvento, linkSeguro, dataCurta, dataHora, relativo, fase } from '../lib/regras.ts';
+import { descreverEvento, linkSeguro, dataCurta, dataHora, relativo, emAndamento, textoAndamento, fase } from '../lib/regras.ts';
 import { Aviso, Atualizado, Avatar, Carregando, ErroAtualizar, Icone, Status } from '../componentes/ui.tsx';
 
 const PRINTS = [
@@ -18,7 +18,8 @@ export function Detalhe({ slug }: { slug: string }) {
     return <>{voltar}{erro ? <Aviso tipo="erro" titulo="Não deu para carregar o projeto" acao={<button className="btn" type="button" onClick={recarregar}>Tentar de novo</button>}>{erro}</Aviso> : <Carregando linhas={5} />}</>;
   }
   const p = dados.projeto;
-  if (!p) return <>{voltar}<Aviso tipo="vazio" titulo="Projeto não encontrado">Não há projeto “{slug}” sincronizado nesta conta.</Aviso></>;
+  if (!p) return <>{voltar}<Aviso tipo="vazio" titulo="Projeto não encontrado">Não há projeto “{slug}” sincronizado nesta equipe.</Aviso></>;
+  const agora = emAndamento(dados.andamento, dados.dispositivos).get(p.slug);
 
   const urlA = linkSeguro(p.url_a);
   const urlB = linkSeguro(p.url_b);
@@ -38,6 +39,8 @@ export function Detalhe({ slug }: { slug: string }) {
       </header>
       {erro && <ErroAtualizar erro={erro} tentar={recarregar} />}
       {p.erro_sincronia && <Aviso tipo="erro" titulo="Problema de sincronização">{p.erro_sincronia}</Aviso>}
+      {p.removido_em && <Aviso tipo="info" titulo="Lead removido do WOODS">Apagado em {dataHora(p.removido_em)}. Ele não aparece mais nas listas; o histórico fica aqui.</Aviso>}
+      {agora && <Aviso tipo="info" titulo={textoAndamento(agora)}>Trabalhando neste lead desde {dataHora(agora.desde)}. Espere terminar antes de mexer nele no seu PC.</Aviso>}
 
       <div className="acoes">
         {urlA && <a className="btn primario" href={urlA} target="_blank" rel="noopener noreferrer"><Icone nome="externo" />Abrir site A</a>}

@@ -87,6 +87,13 @@ export function criarCliente({ url, anonKey, fetch, tempo = 20_000 }) {
         cabecalhos: { 'Content-Type': 'application/json', Prefer: `resolution=${ignorar ? 'ignore' : 'merge'}-duplicates,return=minimal` },
       },
     ),
+    /** Lê linhas. filtros no formato do PostgREST: { slug: 'eq.x', select: 'a,b' } */
+    selecionar: (tabela, filtros, { token }) => pedir(`/rest/v1/${tabela}?${new URLSearchParams(filtros)}`, { metodo: 'GET', token })
+      .then((r) => (Array.isArray(r) ? r : [])),
+    /** Altera as linhas que batem com os filtros */
+    alterar: (tabela, filtros, dados, { token }) => pedir(`/rest/v1/${tabela}?${new URLSearchParams(filtros)}`, {
+      metodo: 'PATCH', token, corpo: json(dados), cabecalhos: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    }),
     enviarArquivo: (bucket, caminho, conteudo, tipo, { token }) => pedir(
       `/storage/v1/object/${bucket}/${caminho.split('/').map(encodeURIComponent).join('/')}`,
       { token, corpo: conteudo, cabecalhos: { 'Content-Type': tipo, 'x-upsert': 'true', 'cache-control': '3600' } },

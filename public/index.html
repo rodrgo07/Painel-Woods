@@ -99,6 +99,13 @@
           <div class="botoes"><button class="btn" type="submit">Salvar</button></div>
         </form>
 
+        <form class="cartao" id="p-resp">
+          <h2>Responsáveis</h2>
+          <p class="suave">Quem pode ser responsável por um lead. Use os mesmos nomes da equipe no Woods Web, para o filtro "Meus leads" funcionar.</p>
+          <label>Nomes, separados por vírgula<input id="c-resp" required placeholder="R Host, L Host"></label>
+          <div class="botoes"><button class="btn" type="submit">Salvar</button></div>
+        </form>
+
         <article class="cartao passo" id="p-nuvem">
           <h2>Woods Web (opcional) <span class="situacao"></span></h2>
           <p class="suave">Envia os dados dos leads (sem as conversas) para o painel online no Supabase, para consultar de qualquer lugar.</p>
@@ -140,7 +147,7 @@
         <div class="linha">
           <label>Cidade<input name="cidade" placeholder="Jundiaí"></label>
           <label>Responsável
-            <select name="responsavel"><option>R Host</option><option>L Host</option></select>
+            <select name="responsavel"></select>
           </label>
         </div>
         <label>Slug<input name="slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="recanto-pet" title="Minúsculas, sem acento, com hífen"></label>

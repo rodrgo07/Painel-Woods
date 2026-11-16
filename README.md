@@ -37,7 +37,10 @@ Quem tinha a versão antiga pode importar as conversas em "Importar conversas de
 - **Ajustes**: escreva no campo da conversa ("troque a cor do botão da B", "use outra foto no hero").
 - **Aprovar e publicar**: o botão aparece quando a ficha está em `site pronto`; o Claude segue as etapas 7 e 8.
 - **Parar**: interrompe o Claude na hora e fecha o navegador dele.
-- **Atualizar WOODS** (Configurações): puxa as novidades do GitHub só avançando (`--ff-only`). Se bater com trabalho local de um lead, recusa e não altera nada. Ao abrir, o app só avisa se há novidades.
+- **WOODS em dia sozinho**: ao abrir e a cada 10 minutos, com o Claude parado, o app puxa as novidades do GitHub só avançando (`--ff-only`), sem janela de login. Se as novidades mexem nas dependências, ou se batem com trabalho local de um lead, ele não mexe em nada e avisa; aí vale o botão **Atualizar WOODS** (Configurações), que também instala as dependências.
+- **Trabalho em equipe** (com o Woods Web conectado): antes de o Claude começar, o app avisa se o sócio está com o Claude no mesmo lead agora, e, num lead novo, se ele já existe na equipe.
+- **Responsáveis** (Configurações): os nomes que aparecem em "Responsável" no novo lead. Use os mesmos nomes da equipe no Woods Web.
+- **Versão nova do app**: quando sai uma Release nova no GitHub (`rodrgo07/Painel-Woods`), aparece um aviso com o link do instalador.
 
 Um lead por vez: o navegador do Playwright é um só. Cada lead tem sua sessão do Claude, então dá para voltar dias
 depois e continuar a conversa. Fechar a janela para o Claude e encerra tudo que o app abriu.
