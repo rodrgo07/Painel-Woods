@@ -21,7 +21,10 @@ Painel Woods (seu PC)                Supabase (nuvem)                    Woods W
 
 | Enviado | Não enviado, nunca |
 |---|---|
-| Nome, slug, Instagram, cidade, responsável e nicho da ficha | Conversas com o Claude (`conversas/*.jsonl`) |
+| Nome, slug, Instagram, cidade, responsável e nicho da ficha | Chave da API cifrada (o cofre do Windows só abre no computador que a gravou) |
+| Conversas do painel e sessões do Claude de cada lead, compactadas, no bucket privado `conversas` (para continuar de outro computador; veja [sincronia.md](sincronia.md)) | |
+| Preferências: modelo, nome e e-mail dos commits, permissões "Sempre" | |
+| Qual computador está com o Claude em cada lead (trava) | |
 | Status da ficha (`pesquisa`, `site pronto`, `aprovado`, `publicado`…) | Chave da API da Anthropic, login do Claude, credenciais do GitHub |
 | Se as variantes A e B já foram geradas | O resto da ficha (WhatsApp, endereço, observações, ligação) |
 | Links A e B da ficha (os endereços publicados) | Código dos sites, fotos dos clientes, `site.config.json` |
@@ -42,7 +45,9 @@ Painel Woods (seu PC)                Supabase (nuvem)                    Woods W
 
 1. No menu da esquerda, abra **SQL Editor** → **New query**.
 2. Abra o arquivo [`supabase/migrations/20261115000000_woods_web.sql`](../supabase/migrations/20261115000000_woods_web.sql)
-   deste repositório, copie **todo** o conteúdo, cole no editor e clique em **Run**.
+   deste repositório, copie **todo** o conteúdo, cole no editor e clique em **Run**. Depois faça o mesmo com
+   [`supabase/migrations/20261116000000_sincronia_total.sql`](../supabase/migrations/20261116000000_sincronia_total.sql)
+   (conversas, preferências e travas da sincronização entre computadores).
 3. Deve aparecer `Success. No rows returned`.
 4. Confira em **Table Editor**: existem `projetos`, `previas`, `eventos` e `dispositivos`, cada uma com o selo **RLS enabled**.
 5. Confira em **Storage**: existe o bucket `previas`, **privado** (sem o selo "Public").
@@ -98,7 +103,7 @@ Não é obrigatório para entrar com senha, mas deixa os e-mails do Supabase (tr
 ## 6. Conectar o Painel Woods
 
 1. Abra o Painel Woods → **Configurações** (ícone ao lado de "Claude livre").
-2. No cartão **Woods Web (opcional)**, preencha:
+2. No cartão **Woods Web**, preencha:
    - **URL do projeto Supabase** e **Chave pública** (passo 4);
    - **E-mail** e **Senha** da sua conta (passo 3).
 3. **Conectar**.

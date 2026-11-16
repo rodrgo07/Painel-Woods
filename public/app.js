@@ -46,9 +46,10 @@ async function carregarLista() {
   estado.leads = s.leads;
   estado.rodando = s.rodando;
   const aviso = $('#aviso');
-  aviso.hidden = !s.falta.length && !s.novidades;
+  aviso.hidden = !s.falta.length && !s.novidades && !s.conflito;
   aviso.textContent = s.falta.length ? 'Configuração incompleta. Abrir as configurações.'
-    : `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`}. Abrir as configurações.`;
+    : s.conflito ? 'A sincronização entre computadores tem um conflito. Abrir as configurações.'
+      : `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`}. Abrir as configurações.`;
   desenharLista();
   if (!$('#tela-config').hidden) desenharConfig();
 }
@@ -263,7 +264,13 @@ async function abrirLead(slug) {
 window.painel.ouvir((slug, linha) => {
   const ev = JSON.parse(linha);
   if (ev.t === 'progresso') progresso(ev);
-  else if (slug === estado.aoVivo) receber(ev);
+  // Chegou trabalho de outro computador: lista, prévia e, se o lead aberto mudou, a conversa
+  else if (ev.t === 'woods') {
+    carregarLista().catch(() => {});
+    if (estado.atual && ev.leads?.includes(estado.atual) && !estado.rodandoAqui && !$('#tela-lead').hidden) atualizarLead().catch(() => {});
+  } else if (ev.t === 'conversa') {
+    if (ev.slug === estado.atual && !estado.rodandoAqui && !$('#tela-lead').hidden) abrirLead(ev.slug);
+  } else if (slug === estado.aoVivo) receber(ev);
 });
 
 async function atualizarLead() {

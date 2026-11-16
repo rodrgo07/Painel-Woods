@@ -9,6 +9,7 @@ import { Fila, espera, ESPERA_MIN, ESPERA_MAX, MAX_TENTATIVAS, lerJson } from '.
 import { conferirConfig } from '../sincronia/supabase.js';
 import { criarServico } from '../sincronia/servico.js';
 import { limpar } from '../nucleo.js';
+import { supabaseFalso, UID, ANON } from './supabase-falso.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'nuvem-teste-'));
 const escrever = (base, arq, conteudo = 'x') => {
@@ -43,7 +44,6 @@ function woodsFalso() {
   return w;
 }
 const prints = (w, ...nomes) => nomes.forEach((n) => escrever(w, `sites/lima-pet-salon/prints/${n}.jpg`, `jpg-${n}`));
-const ANON = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ role: 'anon' })).toString('base64url')}.assinatura`;
 const SERVICE = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url')}.assinatura`;
 
 // ---------- Mapeamento ----------
@@ -154,49 +154,6 @@ test('conferirConfig: só a chave pública e URL https', () => {
 });
 
 // ---------- Serviço com um Supabase falso ----------
-const UID = '11111111-1111-4111-8111-111111111111';
-function supabaseFalso() {
-  const s = { tabelas: { projetos: new Map(), eventos: new Map(), previas: new Map(), dispositivos: new Map() }, arquivos: new Map(), pedidos: [],
-    offline: false, falha500: false, renovacoes: 0, tokenValido: 'acesso-1', renovacaoValida: 'renova-1', recusarProjeto: false };
-  const resposta = (status, corpo) => new Response(corpo === undefined ? null : JSON.stringify(corpo), { status });
-  s.fetch = async (url, { method, headers, body }) => {
-    if (s.offline) throw new TypeError('fetch failed');
-    const u = new URL(url);
-    s.pedidos.push(`${method} ${u.pathname}`);
-    assert.equal(headers.apikey, ANON, 'sempre a chave pública');
-    if (u.pathname === '/auth/v1/token') {
-      const d = JSON.parse(body);
-      if (u.searchParams.get('grant_type') === 'password') {
-        if (d.password !== 'senha-certa') return resposta(400, { error: 'invalid_grant', error_description: 'Invalid login credentials' });
-      } else if (d.refresh_token !== s.renovacaoValida) return resposta(400, { error: 'invalid_grant', error_description: 'Invalid Refresh Token' });
-      s.renovacoes += 1;
-      s.tokenValido = `acesso-${s.renovacoes + 1}`;
-      s.renovacaoValida = `renova-${s.renovacoes + 1}`;
-      return resposta(200, { access_token: s.tokenValido, refresh_token: s.renovacaoValida, expires_in: 3600, user: { id: UID, email: 'eu@woods.com' } });
-    }
-    if (headers.Authorization !== `Bearer ${s.tokenValido}`) return resposta(401, { message: 'JWT expired' });
-    if (s.falha500) return resposta(503, { message: 'indisponível' });
-    if (u.pathname === '/auth/v1/logout') return resposta(204);
-    if (u.pathname.startsWith('/storage/v1/object/previas/')) {
-      s.arquivos.set(decodeURIComponent(u.pathname.slice('/storage/v1/object/previas/'.length)), String(body));
-      return resposta(200, { Key: 'ok' });
-    }
-    const tabela = u.pathname.replace('/rest/v1/', '');
-    const chaves = (u.searchParams.get('on_conflict') || 'id').split(',');
-    if (tabela === 'projetos' && s.recusarProjeto) return resposta(400, { code: '23514', message: 'violates check constraint' });
-    for (const linha of JSON.parse(body)) {
-      assert.equal(linha.owner_id, UID);
-      if (tabela !== 'projetos' && tabela !== 'dispositivos' && !s.tabelas.projetos.has(`${UID},${linha.projeto_slug}`)) {
-        return resposta(409, { code: '23503', message: 'foreign key' });
-      }
-      const k = chaves.map((c) => linha[c]).join(',');
-      const ignorar = headers.Prefer.includes('ignore');
-      if (!(ignorar && s.tabelas[tabela].has(k))) s.tabelas[tabela].set(k, { ...s.tabelas[tabela].get(k), ...linha });
-    }
-    return resposta(201);
-  };
-  return s;
-}
 const cofreFalso = { disponivel: () => true, cifrar: (t) => Buffer.from(`cifrado:${t}`).toString('base64'), decifrar: (b) => Buffer.from(b, 'base64').toString().replace(/^cifrado:/, '') };
 
 function montar({ woods = woodsFalso(), dados = tmp(), sb = supabaseFalso(), relogio = { t: Date.UTC(2026, 10, 15) } } = {}) {
@@ -240,9 +197,10 @@ test('sincronização inicial e repetida: tudo uma vez, sem duplicar', async () 
   assert.equal(servico.situacao().pendentes, 0);
   assert.ok(servico.situacao().ultimaSincronia);
 
-  const antes = sb.pedidos.length;
+  const escritas = () => sb.pedidos.filter((p) => !p.startsWith('GET ')).length;
+  const antes = escritas();
   await servico.sincronizar();
-  assert.equal(sb.pedidos.length, antes, 'nada mudou: nenhum pedido novo');
+  assert.equal(escritas(), antes, 'nada mudou: nada é enviado (só a consulta das conversas)');
 
   // Mudança de status no WOODS: uma linha atualizada e um evento
   escrever(woods, 'vault/20-leads/lima-pet-salon.md', ficha({ status: 'publicado', linkA: 'https://lima-pet-salon-a.pages.dev/' }));

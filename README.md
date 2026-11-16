@@ -53,6 +53,7 @@ Tudo em `%APPDATA%\PainelWoods`. Nada é gravado na pasta de instalação.
 | Erros | `logs\painel-AAAA-MM-DD.log` |
 | Chromium baixado (se precisou) | `navegadores\` |
 | Woods Web: conexão (token cifrado) e fila de envio | `nuvem.json`, `nuvem-estado.json` |
+| Espelho do WOODS entre computadores (última foto, conflito) | `espelho.json` |
 
 Dois itens ficam fora dessa pasta, por conta de quem os guarda: o login do GitHub (Gerenciador de Credenciais do
 Windows) e o login da conta do Claude (`%USERPROFILE%\.claude`, gravado pelo próprio Claude Code).
@@ -83,11 +84,21 @@ set CSC_KEY_PASSWORD=senha-do-certificado
 ```
 Não coloque o certificado nem a senha no repositório.
 
-## Woods Web (opcional)
-Painel online e privado com todos os sites, para consultar do celular ou de outro computador sem o PC ligado.
-O Painel Woods continua igual; um serviço à parte (`sincronia/`) só lê as fichas e os prints do WOODS e envia
-os metadados ao Supabase. Conversas, chaves e credenciais nunca saem do computador. Sem internet, os envios
-esperam numa fila e seguem quando a conexão volta.
+## Vários computadores
+O mesmo trabalho no PC de casa e nos notebooks, como se fosse um computador só. Detalhes e casos de conflito:
+[docs/sincronia.md](docs/sincronia.md).
+
+- **Pasta do WOODS** (leads, sites, fichas, prints, inclusive o que ainda não tem commit): vai e volta pelo GitHub
+  numa referência própria (`refs/painel/espelho`), que não é branch. O `main` só muda com o push do lead aprovado, como antes.
+- **Conversas, sessões do Claude, preferências e travas**: pelo Woods Web (Supabase). Conecte a mesma conta nos três.
+- **Um lead, um computador**: enquanto o Claude trabalha num lead, os outros computadores não começam nele.
+- Fica em cada computador: o login do GitHub, o login do Claude ou a chave da API, o navegador dos prints.
+
+## Woods Web
+Painel online e privado com todos os sites, para consultar do celular ou de outro computador sem o PC ligado,
+e o caminho das conversas e preferências entre os computadores. O serviço `sincronia/` lê as fichas e os prints do
+WOODS e envia os metadados, as conversas (compactadas, no bucket privado `conversas`) e as preferências ao Supabase.
+Chaves e credenciais nunca saem do computador. Sem internet, os envios esperam numa fila e seguem quando a conexão volta.
 
 - Configurar tudo (Supabase, conta, conexão do app): [docs/woods-web.md](docs/woods-web.md)
 - Publicar o painel web no Cloudflare Pages: [docs/cloudflare-pages.md](docs/cloudflare-pages.md)
@@ -99,7 +110,8 @@ esperam numa fila e seguem quando a conexão volta.
 - `painel.js`: leads e conversa com o Claude (Agent SDK)
 - `woods.js`: WOODS (clonar, instalar, atualizar), navegador e ferramentas embutidas
 - `nucleo.js`: configuração, caminho seguro de arquivos e log
-- `sincronia/`: envio ao Woods Web (leitura do WOODS, fila offline, cliente do Supabase). Não mexe nos leads nem no Claude
+- `sincronia/`: tudo entre computadores e o Woods Web. `espelho.js` (pasta do WOODS pelo git), `servico.js` (Supabase:
+  projetos, conversas, preferências, travas), `conversas.js`, `mapa.js`, `fila.js` (offline) e `supabase.js` (cliente)
 - `supabase/migrations/`: tabelas, índices e políticas RLS do Woods Web
 - `web/`: o Woods Web (React + Vite), publicado à parte no Cloudflare Pages
 - `public/`: a página (`index.html`, `app.js`, `style.css`), `nuvem.js` (cartão do Woods Web) e `util.js` (funções usadas pelos dois lados)

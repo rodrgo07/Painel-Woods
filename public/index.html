@@ -95,9 +95,25 @@
           <div class="botoes"><button class="btn" type="submit">Salvar</button></div>
         </form>
 
+        <article class="cartao passo" id="p-sincronia">
+          <h2>Sincronização entre computadores <span class="situacao"></span></h2>
+          <p class="suave">A pasta do WOODS (inclusive o trabalho ainda sem commit) vai e volta pelo GitHub a cada minuto e quando o Claude termina, numa área que não é branch: nada vai ao ar sem o push do lead aprovado. Conversas, sessões do Claude e preferências vão pelo Woods Web, logo abaixo.</p>
+          <ul id="sincronia-info" class="checagens"></ul>
+          <div class="botoes">
+            <button class="btn" type="button" data-sincronia="espelhoSincronizar">Sincronizar agora</button>
+          </div>
+          <div id="sincronia-conflito" hidden>
+            <p class="suave">O mesmo arquivo mudou aqui e em outro computador. Escolha qual versão fica. A outra não se perde: fica guardada no histórico do git.</p>
+            <div class="botoes">
+              <button class="btn primario" type="button" data-sincronia="espelhoResolver" data-lado="local">Ficar com a deste computador</button>
+              <button class="btn" type="button" data-sincronia="espelhoResolver" data-lado="nuvem">Ficar com a do outro computador</button>
+            </div>
+          </div>
+        </article>
+
         <article class="cartao passo" id="p-nuvem">
-          <h2>Woods Web (opcional) <span class="situacao"></span></h2>
-          <p class="suave">Envia os dados dos leads (sem as conversas) para o painel online no Supabase, para consultar de qualquer lugar.</p>
+          <h2>Woods Web <span class="situacao"></span></h2>
+          <p class="suave">Conecte a mesma conta nos três computadores. Vão para o seu Supabase privado: os dados dos leads (para o painel online), as conversas e as sessões do Claude (para continuar de qualquer computador), as preferências e qual computador está trabalhando em cada lead.</p>
           <ul id="nuvem-info" class="checagens"></ul>
           <form id="form-nuvem">
             <label>URL do projeto Supabase<input id="n-url" required placeholder="https://xxxx.supabase.co" autocomplete="off"></label>

@@ -15,6 +15,9 @@ import * as painel from './painel.js';
 import * as woods from './woods.js';
 import { MODELOS, validar, ler, salvar, caminhoSeguro, importarConversas, limpar, iniciarLog, registrar } from './nucleo.js';
 import { criarServico } from './sincronia/servico.js';
+import { criarEspelho, executorGit, leadsDe } from './sincronia/espelho.js';
+import { pastaClaude, lerPermissoes, gravarPermissoes } from './sincronia/conversas.js';
+import { slugar, SLUG_OK } from './public/util.js';
 
 const AQUI = import.meta.dirname;
 if (!app.isPackaged) { try { process.loadEnvFile(path.join(AQUI, '.env')); } catch { /* .env é opcional, só para quem desenvolve */ } }
@@ -62,7 +65,17 @@ const comGit = (aoLer) => ({ ...F, env: env(), aoLer });
 const MCP_NAVEGADOR = { chrome: [], edge: ['--browser', 'msedge'], chromium: ['--browser', 'chromium'] };
 painel.ctx.woods = WOODS;
 painel.ctx.dados = DADOS;
-// Woods Web: só lê o WOODS e o tipo dos eventos da conversa; a sessão do Supabase fica cifrada e nunca vai para a página
+// ---------- Sincronização entre computadores ----------
+// Espelho: a pasta do WOODS inteira (inclusive o que não tem commit) anda entre os computadores pelo GitHub,
+// numa referência que não é branch (nada vai ao ar). Detalhes em sincronia/espelho.js.
+const espelho = criarEspelho({
+  woods: WOODS, dados: DADOS, maquina: os.hostname(), registrar,
+  git: executorGit({ exe: F.git, env: () => ({ ...env(), GCM_INTERACTIVE: 'never' }), acompanhar: woods.acompanhar }),
+});
+let espelhando = false; // o espelho está mexendo na pasta do WOODS
+let preparando = 0;     // um lead está para começar com o Claude: o espelho espera
+
+// Nuvem (Supabase): Woods Web, conversas e sessões do Claude, preferências e travas. A sessão fica cifrada e nunca vai para a página
 const nuvem = criarServico({
   dados: DADOS, woods: WOODS, fetch: (...a) => net.fetch(...a), versao: app.getVersion(), maquina: os.hostname(), registrar,
   cofre: {
@@ -70,11 +83,72 @@ const nuvem = criarServico({
     cifrar: (t) => safeStorage.encryptString(t).toString('base64'),
     decifrar: (b) => (b ? safeStorage.decryptString(Buffer.from(b, 'base64')) : ''),
   },
+  claude: pastaClaude(process.env),
+  ocupado: () => painel.rodando(),
+  pausado: () => espelhando,
+  emDia: () => espelho.emDia() || !woods.checar(WOODS).clonado,
+  preferencias: {
+    ler: () => ({ modelo: cfg.modelo, gitNome: cfg.gitNome, gitEmail: cfg.gitEmail, permissoes: lerPermissoes(WOODS) }),
+    aplicar(p) {
+      cfg = salvar(CONFIG, { ...cfg, modelo: p.modelo || cfg.modelo, gitNome: p.gitNome || cfg.gitNome, gitEmail: p.gitEmail || cfg.gitEmail });
+      if (woods.checar(WOODS).clonado) gravarPermissoes(WOODS, p.permissoes);
+    },
+  },
+  aoBaixarConversa: (slug) => painel.ctx.enviar('', JSON.stringify({ t: 'conversa', slug })),
 });
 painel.ctx.enviar = (slug, linha) => {
   if (win && !win.isDestroyed()) win.webContents.send('painel:evento', slug, linha);
   nuvem.aoEvento(slug, linha);
+  // O Claude terminou: solta a trava, manda a conversa e espelha o que ele fez
+  if (slug && linha.includes('"t":"estado"') && linha.includes('"rodando":false')) {
+    nuvem.depoisDoClaude(slug);
+    setTimeout(() => { sincronizarWoods(); }, 2000).unref?.();
+  }
 };
+
+let sincronia = null;
+/** Uma rodada do espelho, só com o Claude parado e sem tarefa longa. Nunca lança (o erro fica na situação do espelho) */
+function sincronizarWoods({ antesDoClaude = false } = {}) {
+  if (sincronia) return sincronia;
+  if (painel.rodando() || tarefa || (preparando && !antesDoClaude) || !woods.checar(WOODS).clonado) return Promise.resolve(null);
+  sincronia = (async () => {
+    let r = null;
+    espelhando = true;
+    try {
+      r = await espelho.sincronizar();
+      if (r.mudados.length) nuvem.rebasear(); // antes de liberar a pausa: a nuvem não cria eventos do que veio de fora
+    } catch (e) {
+      if (e.tipo !== 'rede') registrar(`espelho: ${e.message}`);
+    } finally {
+      espelhando = false;
+    }
+    if (r?.mudados.length) await depoisDoEspelho(r.leads, r.pacotes).catch((e) => registrar(`espelho: depois: ${e.message}`));
+    return r;
+  })().finally(() => { sincronia = null; });
+  return sincronia;
+}
+
+/** Chegou trabalho de outro computador: dependências, prévia (dist/ não vai pelo git) e a janela */
+async function depoisDoEspelho(leads, pacotes) {
+  painel.ctx.enviar('', JSON.stringify({ t: 'woods', leads }));
+  const o = { ...F, env: env(), aoLer: () => {} };
+  if (pacotes || !woods.checar(WOODS).deps) await woods.instalar(WOODS, o);
+  for (const slug of leads) {
+    if (!fs.existsSync(path.join(WOODS, 'sites', slug, 'site.config.json'))) continue;
+    await woods.rodar(F.node, [F.npm, 'run', 'build', '--', slug], { cwd: WOODS, env: o.env }).catch((e) => registrar(`build ${slug}: ${e.message}`));
+  }
+  if (leads.length) painel.ctx.enviar('', JSON.stringify({ t: 'woods', leads }));
+}
+
+/** Antes de o Claude começar num lead: WOODS e conversa iguais aos dos outros computadores e o lead travado para este */
+async function prepararLead(slug) {
+  await sincronizarWoods({ antesDoClaude: true });
+  const c = espelho.situacao().conflito;
+  if (c && leadsDe(c.arquivos).includes(slug)) {
+    throw new Error(`A sincronização tem um conflito em ${slug}. Resolva em Configurações → Sincronização entre computadores.`);
+  }
+  await nuvem.antesDoClaude(slug);
+}
 painel.ctx.opcoes = () => ({
   env: env(), modelo: cfg.modelo, claude: CLAUDE, node: F.node,
   mcp: { type: 'stdio', command: F.node, args: [path.join(MODULOS, '@playwright', 'mcp', 'cli.js'), ...(MCP_NAVEGADOR[navegador().tipo] || [])] },
@@ -128,12 +202,39 @@ const ACOES = {
       temLogin: temLogin(), temChave: Boolean(cfg.chaveApi), falta: faltas(), novidades, tarefa,
       config: { modelo: cfg.modelo, gitNome: cfg.gitNome, gitEmail: cfg.gitEmail, navegador: cfg.navegador }, modelos: MODELOS,
       rodando: painel.rodando(), leads: w.clonado ? painel.leads() : [],
+      conflito: Boolean(espelho.situacao().conflito),
     };
   },
   lead: ({ slug }) => painel.lead(slug, true),
   eventos: ({ slug }) => painel.eventos(slug),
-  criar(d) { exigirPronto(); return painel.criar(d); },
-  mensagem(d) { exigirPronto(); painel.mensagem(d); },
+  async criar(d) {
+    exigirPronto();
+    if (painel.rodando()) throw new Error(painel.ocupado());
+    const slug = String(d.slug || '').trim() || slugar(String(d.nome || '').trim());
+    preparando++;
+    try {
+      if (SLUG_OK.test(slug)) await prepararLead(slug);
+      exigirPronto();
+      return painel.criar(d);
+    } catch (e) {
+      if (SLUG_OK.test(slug) && painel.rodando() !== slug) nuvem.depoisDoClaude(slug); // não começou: solta a trava
+      throw e;
+    } finally { preparando--; }
+  },
+  async mensagem(d) {
+    exigirPronto();
+    if (painel.rodando()) throw new Error(painel.ocupado());
+    if (!painel.existe(d.slug)) throw new Error('Lead não encontrado');
+    preparando++;
+    try {
+      await prepararLead(d.slug);
+      exigirPronto();
+      painel.mensagem(d);
+    } catch (e) {
+      if (painel.rodando() !== d.slug) nuvem.depoisDoClaude(d.slug); // não começou: solta a trava
+      throw e;
+    } finally { preparando--; }
+  },
   parar: (d) => painel.parar(d),
   permissao: (d) => painel.permissao(d),
 
@@ -189,6 +290,31 @@ const ACOES = {
   nuvemConectar: (d) => nuvem.conectar(d),
   nuvemDesconectar: () => nuvem.desconectar(),
   nuvemSincronizar: () => nuvem.agora(),
+
+  // Espelho do WOODS entre computadores (git)
+  espelho: () => ({ ...espelho.situacao(), clonado: woods.checar(WOODS).clonado, nuvem: nuvem.situacao().conectado }),
+  async espelhoSincronizar() {
+    if (painel.rodando()) throw new Error(painel.ocupado());
+    await sincronizarWoods();
+    await nuvem.agora();
+    return ACOES.espelho();
+  },
+  async espelhoResolver({ lado }) {
+    if (painel.rodando()) throw new Error(painel.ocupado());
+    if (tarefa) throw new Error(`Espere terminar: ${tarefa}.`);
+    if (sincronia) await sincronia;
+    const leads = leadsDe(espelho.situacao().conflito?.arquivos || []);
+    espelhando = true;
+    try {
+      await espelho.resolver(lado);
+      nuvem.rebasear();
+    } finally {
+      espelhando = false;
+    }
+    await depoisDoEspelho(leads, false).catch((e) => registrar(`espelho: depois: ${e.message}`));
+    nuvem.agora();
+    return ACOES.espelho();
+  },
 };
 
 ipcMain.handle('painel', async (e, acao, dados) => {
@@ -247,7 +373,10 @@ app.whenReady().then(() => {
   win.on('closed', () => app.quit());
   win.loadURL('painel://app/');
   nuvem.iniciar();
-  powerMonitor.on('resume', () => { nuvem.agora(); }); // o PC acordou: tenta o que ficou pendente
+  // Espelho do WOODS: ao abrir e a cada minuto (o Claude parado); ao acordar o PC, na hora
+  setTimeout(() => { sincronizarWoods(); }, 3000);
+  setInterval(() => { sincronizarWoods(); }, 60_000);
+  powerMonitor.on('resume', () => { sincronizarWoods().then(() => nuvem.agora()); }); // o PC acordou: tenta o que ficou pendente
   // Só confere se há novidades; sem janela de login nesta hora. Atualizar é pelo botão.
   if (woods.checar(WOODS).clonado) {
     woods.novidades(WOODS, { ...F, env: { ...env(), GCM_INTERACTIVE: 'never' } })
