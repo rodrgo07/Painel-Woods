@@ -1,7 +1,7 @@
 // Regras do Woods Web: fases do status, resumo dos cards, filtros, integração e links. `npm test` em web/.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fase, resumir, filtrar, opcoes, integracao, linkSeguro, descreverEvento, FILTROS_VAZIOS, SEM_CONTATO_MS } from '../src/lib/regras.ts';
+import { fase, resumir, filtrar, opcoes, integracao, linkSeguro, descreverEvento, porResponsavel, iniciais, FILTROS_VAZIOS, SEM_CONTATO_MS } from '../src/lib/regras.ts';
 import type { Dispositivo, Projeto } from '../src/lib/tipos.ts';
 
 const proj = (p: Partial<Projeto>): Projeto => ({
@@ -38,6 +38,11 @@ test('filtros: busca sem acento, status, cidade, responsável e ordem', () => {
   assert.deepEqual(slugs({ busca: '  PET ' }), ['b', 'c']);
   assert.deepEqual(slugs({ cidade: 'Cotia', responsavel: 'R Host' }), ['a']);
   assert.deepEqual(slugs({ status: 'site pronto' }), ['b']);
+  assert.deepEqual(slugs({ fase: 'pronto' }), ['b']);
+  assert.deepEqual(slugs({ fase: 'desenvolvimento' }), ['c', 'a']);
+  assert.deepEqual(porResponsavel(lista).map((r) => [r.nome, r.total, r.pronto]), [['R Host', 2, 0], ['L Host', 1, 1]]);
+  assert.equal(iniciais('R Host'), 'RH');
+  assert.equal(iniciais(''), '?');
   assert.deepEqual(opcoes(lista, 'cidade'), ['Caucaia', 'Cotia']);
   assert.equal(filtrar(lista, FILTROS_VAZIOS) !== lista, true, 'não altera a lista original');
 });

@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, erroConfig } from './lib/supabase.ts';
 import { carregarGeral, esquecerAssinaturas } from './lib/dados.ts';
-import { usePeriodico, useRota } from './lib/ganchos.ts';
+import { usePeriodico, useRota, ir } from './lib/ganchos.ts';
 import { Login } from './paginas/Login.tsx';
 import { Visao } from './paginas/Visao.tsx';
 import { Sites } from './paginas/Sites.tsx';
 import { Detalhe } from './paginas/Detalhe.tsx';
-import { Integracao, Aviso, Marca } from './componentes/ui.tsx';
+import { Integracao, Aviso, Marca, Icone, Avatar } from './componentes/ui.tsx';
 
 export function App() {
   const [sessao, setSessao] = useState<Session | null | undefined>(undefined);
@@ -30,39 +30,54 @@ const INTERVALO = 60_000; // 1 leitura por minuto com a aba aberta: o desktop si
 function Painel({ email }: { email: string }) {
   const rota = useRota();
   const geral = usePeriodico(carregarGeral, INTERVALO);
-  const [pagina, ...resto] = rota.split('/');
+  const [caminho, consulta = ''] = rota.split('?');
+  const [pagina, ...resto] = caminho.split('/');
   const slug = pagina === 'sites' && resto[0] ? decodeURIComponent(resto[0]) : '';
-  useEffect(() => { window.scrollTo(0, 0); }, [rota]);
+  const params = new URLSearchParams(consulta);
+  const [termo, setTermo] = useState('');
+  useEffect(() => { window.scrollTo(0, 0); }, [caminho]);
 
   const sair = async () => {
     esquecerAssinaturas();
     await supabase!.auth.signOut();
     window.location.hash = '';
   };
+  const buscar = (e: FormEvent) => {
+    e.preventDefault();
+    ir(`sites?q=${encodeURIComponent(termo.trim())}`);
+    setTermo('');
+  };
 
-  const nav = [['', 'Visão geral'], ['sites', 'Sites']] as const;
   const ativo = pagina === 'sites' ? 'sites' : '';
+  const total = geral.dados?.projetos.length;
 
   return (
     <div className="casca">
       <aside className="lateral">
         <Marca />
+        <form className="busca-lateral" role="search" onSubmit={buscar}>
+          <Icone nome="busca" />
+          <input type="search" placeholder="Buscar cliente…" value={termo} onChange={(e) => setTermo(e.target.value)} aria-label="Buscar cliente" />
+          <kbd aria-hidden="true">↵</kbd>
+        </form>
         <nav className="nav" aria-label="Seções">
-          {nav.map(([r, rotulo]) => (
-            <a key={r} href={`#/${r}`} className={ativo === r ? 'ativo' : ''} aria-current={ativo === r ? 'page' : undefined}>{rotulo}</a>
-          ))}
+          <a href="#/" className={ativo === '' ? 'ativo' : ''} aria-current={ativo === '' ? 'page' : undefined}><Icone nome="visao" />Visão geral</a>
+          <a href="#/sites" className={ativo === 'sites' ? 'ativo' : ''} aria-current={ativo === 'sites' ? 'page' : undefined}>
+            <Icone nome="sites" />Sites{total !== undefined && <span className="contador">{total}</span>}
+          </a>
         </nav>
         <div className="lateral-pe">
           {geral.dados && <Integracao dispositivos={geral.dados.dispositivos} compacto />}
           <div className="conta">
+            <Avatar nome={email} pequeno />
             <span className="conta-email" title={email}>{email}</span>
-            <button type="button" className="btn fantasma" onClick={sair}>Sair</button>
+            <button type="button" className="btn-icone" onClick={sair} title="Sair" aria-label="Sair"><Icone nome="sair" /></button>
           </div>
         </div>
       </aside>
       <main className="conteudo">
         {slug ? <Detalhe slug={slug} />
-          : pagina === 'sites' ? <Sites geral={geral} />
+          : pagina === 'sites' ? <Sites geral={geral} busca={params.get('q')} fase={params.get('fase')} />
           : <Visao geral={geral} />}
       </main>
     </div>

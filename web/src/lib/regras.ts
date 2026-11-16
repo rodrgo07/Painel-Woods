@@ -28,8 +28,24 @@ export function resumir(projetos: Projeto[]): Resumo {
   return r;
 }
 
-export interface Filtros { busca: string; status: string; cidade: string; responsavel: string; ordem: 'recentes' | 'antigos' | 'criados' }
-export const FILTROS_VAZIOS: Filtros = { busca: '', status: '', cidade: '', responsavel: '', ordem: 'recentes' };
+export interface Filtros { busca: string; fase: Fase | ''; status: string; cidade: string; responsavel: string; ordem: 'recentes' | 'antigos' | 'criados' }
+export const FILTROS_VAZIOS: Filtros = { busca: '', fase: '', status: '', cidade: '', responsavel: '', ordem: 'recentes' };
+
+/** Projetos de cada responsável, com quantos em cada fase (painel "Responsáveis") */
+export function porResponsavel(projetos: Projeto[]) {
+  const m = new Map<string, Record<Fase, number> & { total: number }>();
+  for (const p of projetos) {
+    const nome = p.responsavel || 'Sem responsável';
+    const r = m.get(nome) ?? { total: 0, desenvolvimento: 0, pronto: 0, publicado: 0, perdido: 0 };
+    r.total += 1;
+    r[fase(p.status)] += 1;
+    m.set(nome, r);
+  }
+  return [...m].map(([nome, r]) => ({ nome, ...r })).sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+
+/** "R Host" → "RH", "Lima Pet Salon" → "LP" */
+export const iniciais = (nome: string) => nome.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
 
 const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const tempo = (iso: string | null) => (iso ? Date.parse(iso) || 0 : 0);
@@ -37,6 +53,7 @@ const tempo = (iso: string | null) => (iso ? Date.parse(iso) || 0 : 0);
 export function filtrar(projetos: Projeto[], f: Filtros): Projeto[] {
   const busca = semAcento(f.busca.trim());
   const lista = projetos.filter((p) => (!busca || semAcento(`${p.nome} ${p.slug}`).includes(busca))
+    && (!f.fase || fase(p.status) === f.fase)
     && (!f.status || p.status === f.status)
     && (!f.cidade || p.cidade === f.cidade)
     && (!f.responsavel || p.responsavel === f.responsavel));
