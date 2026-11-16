@@ -8,12 +8,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, Menu, dialog, ipcMain, net, powerMonitor, protocol, safeStorage, session, shell } from 'electron';
 import * as painel from './painel.js';
 import * as woods from './woods.js';
-import { MODELOS, validar, ler, salvar, caminhoSeguro, importarConversas, limpar, iniciarLog, registrar } from './nucleo.js';
+import { MODELOS, validar, ler, salvar, caminhoSeguro, importarConversas, limpar, iniciarLog, registrar, maisNova } from './nucleo.js';
+import { SLUG_OK } from './public/util.js';
 import { criarServico } from './sincronia/servico.js';
 
 const AQUI = import.meta.dirname;
@@ -45,7 +46,8 @@ process.on('unhandledRejection', (e) => registrar(`promessa rejeitada: ${e?.stac
 let cfg = ler(CONFIG);
 let win = null;
 let tarefa = '';   // tarefa longa em andamento (baixar, instalar, atualizar)
-let novidades = 0; // commits novos do WOODS no GitHub, conferidos ao abrir
+let novidades = 0; // commits novos do WOODS no GitHub que não deu para puxar sozinho
+let versaoNova = null; // { versao, url }: release do Painel Woods mais nova que esta
 
 // ---------- Claude, navegador e ambiente dos processos ----------
 /** Chave da API, guardada cifrada (DPAPI). Só existe em memória e no ambiente do Claude */
@@ -62,9 +64,21 @@ const comGit = (aoLer) => ({ ...F, env: env(), aoLer });
 const MCP_NAVEGADOR = { chrome: [], edge: ['--browser', 'msedge'], chromium: ['--browser', 'chromium'] };
 painel.ctx.woods = WOODS;
 painel.ctx.dados = DADOS;
+painel.ctx.responsaveis = () => cfg.responsaveis;
+
+/** git do app dentro do WOODS, sem janela de login (para ler datas de commit e o status) */
+function gitWoods(args) {
+  if (!woods.checar(WOODS).clonado) throw new Error('WOODS ainda não baixado');
+  const r = spawnSync(F.git, args, {
+    cwd: WOODS, env: { ...env(), GCM_INTERACTIVE: 'never' }, encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 2 ** 20, timeout: 30_000,
+  });
+  if (r.error || r.status !== 0) throw new Error((r.error?.message || r.stderr || `git saiu com o código ${r.status}`).trim());
+  return r.stdout;
+}
+
 // Woods Web: só lê o WOODS e o tipo dos eventos da conversa; a sessão do Supabase fica cifrada e nunca vai para a página
 const nuvem = criarServico({
-  dados: DADOS, woods: WOODS, fetch: (...a) => net.fetch(...a), versao: app.getVersion(), maquina: os.hostname(), registrar,
+  dados: DADOS, woods: WOODS, fetch: (...a) => net.fetch(...a), git: gitWoods, versao: app.getVersion(), maquina: os.hostname(), registrar,
   cofre: {
     disponivel: () => safeStorage.isEncryptionAvailable(),
     cifrar: (t) => safeStorage.encryptString(t).toString('base64'),
@@ -125,8 +139,9 @@ const ACOES = {
     const w = woods.checar(WOODS);
     return {
       versao: app.getVersion(), pasta: WOODS, ...w, navegador: navegador().exe,
-      temLogin: temLogin(), temChave: Boolean(cfg.chaveApi), falta: faltas(), novidades, tarefa,
-      config: { modelo: cfg.modelo, gitNome: cfg.gitNome, gitEmail: cfg.gitEmail, navegador: cfg.navegador }, modelos: MODELOS,
+      temLogin: temLogin(), temChave: Boolean(cfg.chaveApi), falta: faltas(), novidades, tarefa, versaoNova,
+      config: { modelo: cfg.modelo, gitNome: cfg.gitNome, gitEmail: cfg.gitEmail, navegador: cfg.navegador, responsaveis: cfg.responsaveis },
+      modelos: MODELOS, eu: nuvem.situacao().nome || '',
       rodando: painel.rodando(), leads: w.clonado ? painel.leads() : [],
     };
   },
@@ -135,6 +150,8 @@ const ACOES = {
   criar(d) { exigirPronto(); return painel.criar(d); },
   mensagem(d) { exigirPronto(); painel.mensagem(d); },
   parar: (d) => painel.parar(d),
+  /** Antes de criar ou mandar: o lead já existe na equipe? alguém está com o Claude nele? (null = sem como saber) */
+  equipeLead: ({ slug }) => (SLUG_OK.test(slug ?? '') ? nuvem.consultar(slug) : null),
   permissao: (d) => painel.permissao(d),
 
   // Primeira execução e configurações
@@ -166,6 +183,7 @@ const ACOES = {
   },
   salvarConfig(d) {
     const novo = validar({ ...cfg, ...d, chaveApi: cfg.chaveApi });
+    if ('responsaveis' in d && !String(d.responsaveis).trim()) throw new Error('Informe pelo menos um responsável');
     if (d.gitEmail && !novo.gitEmail) throw new Error('E-mail inválido');
     cfg = salvar(CONFIG, novo);
   },
@@ -248,9 +266,52 @@ app.whenReady().then(() => {
   win.loadURL('painel://app/');
   nuvem.iniciar();
   powerMonitor.on('resume', () => { nuvem.agora(); }); // o PC acordou: tenta o que ficou pendente
-  // Só confere se há novidades; sem janela de login nesta hora. Atualizar é pelo botão.
-  if (woods.checar(WOODS).clonado) {
-    woods.novidades(WOODS, { ...F, env: { ...env(), GCM_INTERACTIVE: 'never' } })
-      .then((n) => { novidades = n; }, (e) => registrar(`novidades: ${e.message}`));
-  }
+  // WOODS em dia sozinho: ao abrir e a cada 10 min, com o Claude parado
+  puxarSozinho();
+  setInterval(puxarSozinho, 10 * 60_000).unref?.();
+  conferirVersao();
+  setInterval(conferirVersao, 6 * 3600_000).unref?.();
 });
+
+/**
+ * Puxa as novidades do WOODS sem pedir nada: só com o Claude parado, só avançando (ff-only, nunca mexe em trabalho
+ * local) e sem janela de login. Se as dependências mudaram, ou se bater com trabalho local, fica o aviso e o botão
+ * Atualizar das configurações, como antes.
+ */
+async function puxarSozinho() {
+  if (tarefa || painel.rodando() || !woods.checar(WOODS).clonado) return;
+  const o = { ...F, env: { ...env(), GCM_INTERACTIVE: 'never' } };
+  try {
+    novidades = await woods.novidades(WOODS, o);
+    if (!novidades || await woods.mudaDependencias(WOODS, o)) return;
+    if (tarefa || painel.rodando()) return; // o Claude começou enquanto o git conferia
+    tarefa = 'Atualizando o WOODS';
+    try {
+      const r = await woods.atualizar(WOODS, o);
+      novidades = 0;
+      registrar(`WOODS atualizado sozinho: ${r.commits} commit(s)`);
+    } finally {
+      tarefa = '';
+    }
+    nuvem.agora(); // o que o sócio publicou aparece no Woods Web com as datas certas
+  } catch (e) {
+    registrar(`atualização automática do WOODS: ${e.message}`);
+  }
+}
+
+/** Release nova do Painel Woods no GitHub: só avisa (o instalador novo é baixado pelo navegador) */
+async function conferirVersao() {
+  try {
+    const r = await net.fetch('https://api.github.com/repos/rodrgo07/Painel-Woods/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) return; // sem release publicada ou sem internet
+    const j = await r.json();
+    const url = String(j.html_url || '');
+    if (maisNova(String(j.tag_name || ''), app.getVersion()) && url.startsWith('https://github.com/')) {
+      versaoNova = { versao: String(j.tag_name).replace(/^v/, ''), url };
+    }
+  } catch (e) {
+    registrar(`versão nova: ${e.message}`);
+  }
+}

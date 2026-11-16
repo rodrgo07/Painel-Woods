@@ -18,9 +18,9 @@ export const ctx = {
   dados: '',          // sessoes.json e conversas/<slug>.jsonl
   enviar: () => {},   // (slug, linha JSON) → janela
   opcoes: () => ({}), // { env, modelo, claude, node, mcp }, lidos a cada conversa
+  responsaveis: () => ['R Host', 'L Host'], // das configurações
 };
 const PRINTS = ['a-390', 'b-390', 'a-1440', 'b-1440'];
-const RESPONSAVEIS = ['R Host', 'L Host'];
 
 // ---------- Leads (lidos direto do WOODS) ----------
 export const pastaLead = (slug) => path.join(ctx.woods, 'sites', slug);
@@ -208,7 +208,7 @@ export function criar(d) {
   };
   dados.slug = String(d.slug || '').trim() || slugar(dados.nome);
   if (!dados.nome || !dados.instagram) throw new Error('Nome e Instagram são obrigatórios');
-  if (!RESPONSAVEIS.includes(dados.responsavel)) throw new Error('Responsável inválido');
+  if (!ctx.responsaveis().includes(dados.responsavel)) throw new Error('Responsável inválido');
   if (!SLUG_OK.test(dados.slug)) throw new Error('Slug inválido: minúsculas, sem acento, com hífen');
   if (trabalho) throw new Error(ocupado());
   const o = ctx.opcoes();

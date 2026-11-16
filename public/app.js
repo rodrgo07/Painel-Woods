@@ -46,9 +46,14 @@ async function carregarLista() {
   estado.leads = s.leads;
   estado.rodando = s.rodando;
   const aviso = $('#aviso');
-  aviso.hidden = !s.falta.length && !s.novidades;
+  aviso.hidden = !s.falta.length && !s.novidades && !s.versaoNova;
+  // Versão nova do app: o link abre a página da release no navegador do Windows
+  const fora = !s.falta.length && !s.novidades && s.versaoNova;
+  aviso.href = fora ? s.versaoNova.url : '#/config';
+  if (fora) aviso.target = '_blank'; else aviso.removeAttribute('target');
   aviso.textContent = s.falta.length ? 'Configuração incompleta. Abrir as configurações.'
-    : `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`}. Abrir as configurações.`;
+    : s.novidades ? `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`} que precisam do botão Atualizar. Abrir as configurações.`
+    : fora ? `Painel Woods ${s.versaoNova.versao} disponível. Baixar o instalador novo.` : '';
   desenharLista();
   if (!$('#tela-config').hidden) desenharConfig();
 }
@@ -90,6 +95,7 @@ function mostrarConfig() {
   $('#c-navegador').value = c.navegador;
   $('#c-git-nome').value = c.gitNome;
   $('#c-git-email').value = c.gitEmail;
+  $('#c-resp').value = c.responsaveis.join(', ');
   desenharConfig();
   checar();
 }
@@ -195,6 +201,10 @@ $('#p-git').onsubmit = (e) => {
   e.preventDefault();
   salvarConfig({ gitNome: $('#c-git-nome').value, gitEmail: $('#c-git-email').value }, 'Assinatura salva.');
 };
+$('#p-resp').onsubmit = (e) => {
+  e.preventDefault();
+  salvarConfig({ responsaveis: $('#c-resp').value }, 'Responsáveis salvos.');
+};
 $('#form-chave').onsubmit = async (e) => {
   e.preventDefault();
   try {
@@ -217,7 +227,10 @@ function mostrarNovo() {
   mostrar('#tela-novo');
   form.reset();
   slugManual = false;
-  form.responsavel.value = lembrar('responsavel') || 'R Host';
+  const resp = estado.sit.config.responsaveis;
+  form.responsavel.innerHTML = resp.map((r) => `<option>${esc(r)}</option>`).join('');
+  // O último escolhido aqui; senão o meu nome na equipe do Woods Web; senão o primeiro da lista
+  form.responsavel.value = [lembrar('responsavel'), estado.sit.eu].find((r) => resp.includes(r)) || resp[0];
   form.nome.focus();
 }
 
@@ -230,6 +243,7 @@ form.onsubmit = async (e) => {
   botao.disabled = true;
   try {
     const dados = Object.fromEntries(new FormData(form));
+    if (!await conferirEquipe(dados.slug || slugar(dados.nome), true)) return;
     lembrar('responsavel', dados.responsavel);
     const { slug } = await api('criar', dados);
     await carregarLista();
@@ -240,6 +254,30 @@ form.onsubmit = async (e) => {
     botao.disabled = false;
   }
 };
+
+// ---------- Equipe (Woods Web) ----------
+const hora = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+/**
+ * Antes de pôr o Claude para trabalhar: avisa se o sócio está com o Claude nesse lead agora
+ * ou, num lead novo, se ele já existe na equipe. Sem Woods Web ou sem internet, segue sem perguntar.
+ */
+async function conferirEquipe(slug, novo) {
+  const r = await api('equipeLead', { slug }).catch(() => null);
+  if (!r) return true;
+  const a = r.andamento;
+  if (a) {
+    const onde = a.computador ? ` (no ${a.computador}, desde ${hora(a.desde)})` : '';
+    return confirm(`${a.quem || 'Alguém da equipe'} está com o Claude neste lead agora${onde}.\n\n`
+      + 'Se os dois mexerem no mesmo lead, vai dar conflito no GitHub. Continuar mesmo assim?');
+  }
+  if (novo && r.projeto) {
+    const info = [r.projeto.responsavel && `responsável: ${r.projeto.responsavel}`, r.projeto.status && `status: ${r.projeto.status}`].filter(Boolean).join(', ');
+    return confirm(`O lead "${slug}" já existe na equipe${info ? ` (${info})` : ''}.\n\n`
+      + 'Criar de novo aqui duplica o trabalho. O melhor é esperar o WOODS atualizar (ou clicar em Atualizar WOODS nas configurações) e abrir o lead que já existe. Criar mesmo assim?');
+  }
+  return true;
+}
 
 // ---------- Lead ----------
 async function abrirLead(slug) {
@@ -425,6 +463,7 @@ $('#log').onclick = async (e) => {
 };
 
 async function mandar(texto) {
+  if (!await conferirEquipe(estado.atual, false)) return false;
   try {
     await api('mensagem', { slug: estado.atual, texto });
     return true;
