@@ -20,7 +20,17 @@ export interface Projeto {
   removido_em?: string | null;
 }
 
-/** Quem está com o Claude num lead agora (tabela andamento) */
+/** Linha da tabela travas: o computador que está com o Claude num lead */
+export interface Trava {
+  projeto_slug: string;
+  dispositivo_id: string;
+  quem: string | null;
+  maquina: string | null;
+  desde: string;
+  renovada_em: string;
+}
+
+/** Quem está com o Claude num lead agora (vem da trava) */
 export interface Andamento {
   projeto_slug: string;
   dispositivo_id: string;

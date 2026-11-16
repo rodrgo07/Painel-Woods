@@ -38,9 +38,9 @@ Quem tinha a versão antiga pode importar as conversas em "Importar conversas de
 - **Aprovar e publicar**: o botão aparece quando a ficha está em `site pronto`; o Claude segue as etapas 7 e 8.
 - **Parar**: interrompe o Claude na hora e fecha o navegador dele.
 - **WOODS em dia sozinho**: ao abrir e a cada 10 minutos, com o Claude parado, o app puxa as novidades do GitHub só avançando (`--ff-only`), sem janela de login. Se as novidades mexem nas dependências, ou se batem com trabalho local de um lead, ele não mexe em nada e avisa; aí vale o botão **Atualizar WOODS** (Configurações), que também instala as dependências.
-- **Trabalho em equipe** (com o Woods Web conectado): antes de o Claude começar, o app avisa se o sócio está com o Claude no mesmo lead agora, e, num lead novo, se ele já existe na equipe.
+- **Trabalho em equipe** (com o Woods Web conectado): cada lead é do seu **Responsável**. O Claude só trabalha nos seus leads; no lead do sócio o chat mostra **Não permitido** (e vale o mesmo para ele nos seus). Um lead em uso num computador fica travado para os outros. Num lead novo, o app avisa se ele já existe na equipe.
 - **Responsáveis** (Configurações): os nomes que aparecem em "Responsável" no novo lead. Use os mesmos nomes da equipe no Woods Web.
-- **Versão nova do app**: quando sai uma Release nova no GitHub (`rodrgo07/Painel-Woods`), aparece um aviso com o link do instalador.
+- **Versão nova do app**: quando sai uma Release nova no GitHub (`rodrgo07/Painel-Woods`), o app baixa sozinho e mostra "Versão x pronta" na barra lateral. Um clique reinicia já atualizado; se ninguém clicar, instala ao fechar.
 
 Um lead por vez: o navegador do Playwright é um só. Cada lead tem sua sessão do Claude, então dá para voltar dias
 depois e continuar a conversa. Fechar a janela para o Claude e encerra tudo que o app abriu.
@@ -81,8 +81,8 @@ Sai em `dist/`: `Painel-Woods-Setup-<versão>.exe` e `Painel-Woods-<versão>-por
 
 ### Lançar uma versão (atualização automática)
 ```
-npm version 1.1.0 --no-git-tag-version
-git commit -am "Versão 1.1.0"
+npm version 1.2.1 --no-git-tag-version
+git commit -am "Versão 1.2.1"
 git push
 npm run lancar
 ```
@@ -107,8 +107,11 @@ O mesmo trabalho no PC de casa e nos notebooks, como se fosse um computador só.
 
 - **Pasta do WOODS** (leads, sites, fichas, prints, inclusive o que ainda não tem commit): vai e volta pelo GitHub
   numa referência própria (`refs/painel/espelho`), que não é branch. O `main` só muda com o push do lead aprovado, como antes.
-- **Conversas, sessões do Claude, preferências e travas**: pelo Woods Web (Supabase). Conecte a mesma conta nos três.
-- **Um lead, um computador**: enquanto o Claude trabalha num lead, os outros computadores não começam nele.
+- **Conversas, sessões do Claude e preferências**: pelo Woods Web (Supabase), por conta. Conecte a mesma conta nos
+  seus computadores; o sócio usa a dele e não vê as suas conversas.
+- **Um lead, um computador**: enquanto o Claude trabalha num lead, nenhum outro computador da equipe começa nele.
+- **O sócio**: usa a mesma pasta do WOODS (o mesmo espelho) e o mesmo Woods Web, com a conta dele. Cada um só põe o
+  Claude nos leads em que é o responsável.
 - Fica em cada computador: o login do GitHub, o login do Claude ou a chave da API, o navegador dos prints.
 
 ## Woods Web

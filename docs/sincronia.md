@@ -1,6 +1,6 @@
 # Sincronização entre computadores
 
-O Painel Woods roda no PC de casa e em dois notebooks. A sincronização faz os três funcionarem como um computador só:
+O Painel Woods roda no PC de casa, em dois notebooks e no PC do sócio. A sincronização faz todos funcionarem como um computador só:
 um lead criado em casa aparece no notebook com a pasta, a ficha, os sites, os prints e a conversa com o Claude, e o
 Claude continua de onde parou.
 
@@ -9,9 +9,9 @@ Claude continua de onde parou.
 | O quê | Por onde | Quando |
 |---|---|---|
 | Pasta do WOODS inteira: fichas, `sites/<slug>/` (A, B, fotos, prints, `site.config.json`), vault, tudo que ainda não tem commit e os commits locais | GitHub, referência `refs/painel/espelho` (não é branch) | A cada minuto, ao abrir o app, ao acordar o PC, quando o Claude termina e antes de o Claude começar |
-| Histórico do painel (`conversas/<slug>.jsonl`) e sessão do Claude Code de cada lead | Supabase, tabela `conversas` + bucket privado `conversas` (`.gz`) | Igual |
-| Modelo, nome e e-mail dos commits, permissões "Sempre" (`WOODS/.claude/settings.local.json`) | Supabase, tabela `preferencias` | Igual |
-| Qual computador está com o Claude em cada lead | Supabase, tabela `travas` | Quando o Claude começa e termina (renovada a cada 2 min) |
+| Histórico do painel (`conversas/<slug>.jsonl`) e sessão do Claude Code de cada lead (de cada conta: o sócio não vê as suas) | Supabase, tabela `conversas` + bucket privado `conversas` (`.gz`) | Igual |
+| Modelo, nome e e-mail dos commits, permissões "Sempre" (`WOODS/.claude/settings.local.json`), de cada conta | Supabase, tabela `preferencias` | Igual |
+| Qual computador está com o Claude em cada lead (da equipe: vale também entre você e o sócio, e aparece no Woods Web) | Supabase, tabela `travas` | Quando o Claude começa e termina (renovada a cada 2 min) |
 | `dist/` dos sites | Não vai: cada computador refaz com `npm run build -- <slug>` quando chega um lead mudado | Logo depois da sincronização |
 | `node_modules` | Não vai: `npm ci` roda sozinho quando o `package-lock.json` muda | Logo depois da sincronização |
 | Login do GitHub, login do Claude, chave da API, navegador dos prints | Fica em cada computador (o cofre do Windows só abre a chave no computador que a gravou) | Configure uma vez em cada um |
@@ -37,9 +37,12 @@ Preview branch: Custom branches → Exclude: `painel-espelho`**.
 - **Caminho do WOODS**: a sessão do Claude tem o caminho da pasta dentro (`C:\Users\<você>\AppData\…`). Ele é trocado por
   `{{WOODS}}` na nuvem e volta com o caminho do computador que baixou.
 - **Trava**: antes de o Claude começar, o app traz o WOODS e a conversa mais novos e trava o lead. Se outro computador
-  está com o Claude nele, o painel avisa e não começa. Trava sem renovação por 10 minutos (PC desligado no meio) vence sozinha.
+  (seu ou do sócio) está com o Claude nele, o painel avisa e não começa. Trava sem renovação por 10 minutos (PC desligado
+  no meio) vence sozinha.
+- **Dono do lead**: com o Woods Web conectado, o Claude só trabalha nos leads em que você é o Responsável. No lead do
+  sócio, o chat fica "Não permitido". O banco também recusa a trava de quem não é o responsável.
 - **Woods Web**: um computador com o WOODS atrasado não envia os projetos até sincronizar, e o banco recusa sobrescrever um
-  projeto com uma ficha mais velha (gatilho `projetos_mais_novo`). Eventos (mudança de status etc.) são registrados só pelo
+  projeto com uma ficha mais velha (gatilho `recusar_versao_velha`). Eventos (mudança de status etc.) são registrados só pelo
   computador onde a mudança aconteceu.
 
 ## Conflito
@@ -54,9 +57,10 @@ Nos dois casos a outra versão continua no histórico do git e dá para recupera
 o Claude não começa nesse lead.
 
 ## Colocar para funcionar (uma vez)
-1. **Supabase**: rode `supabase/migrations/20261116000000_sincronia_total.sql` no SQL Editor (depois da migration do Woods Web).
-2. **Instalador novo**: no PC de casa, `npm run dist` e instale `dist\Painel-Woods-Setup-<versão>.exe` nos três computadores.
-3. **Em cada computador**: Configurações → passos 1 a 5 (GitHub, WOODS, Claude) e o cartão **Woods Web** com a **mesma conta**.
+1. **Supabase**: as três migrations, em ordem (veja [woods-web.md](woods-web.md), passo 2).
+2. **Instalar o novo**: siga o [PASSO-A-PASSO.md](PASSO-A-PASSO.md).
+3. **Em cada computador**: Configurações → passos 1 a 5 (GitHub, WOODS, Claude) e o cartão **Woods Web** com a **mesma conta**
+   (no PC do sócio, a conta dele).
 4. Comece pelo computador que tem o trabalho mais recente: abra o app e espere o cartão **Sincronização entre computadores**
    ficar "em dia". Depois abra os outros. Trabalho que só existia num notebook também vai junto (é juntado, não apagado).
 

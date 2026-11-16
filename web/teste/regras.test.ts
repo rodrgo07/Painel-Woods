@@ -1,7 +1,7 @@
 // Regras do Woods Web: fases do status, resumo dos cards, filtros, integração e links. `npm test` em web/.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fase, resumir, filtrar, opcoes, integracao, emAndamento, textoAndamento, linkSeguro, descreverEvento, porResponsavel, iniciais, FILTROS_VAZIOS, SEM_CONTATO_MS } from '../src/lib/regras.ts';
+import { fase, resumir, filtrar, opcoes, integracao, emAndamento, textoAndamento, daTrava, TRAVA_VALIDADE_MS, linkSeguro, descreverEvento, porResponsavel, iniciais, FILTROS_VAZIOS, SEM_CONTATO_MS } from '../src/lib/regras.ts';
 import type { Andamento, Dispositivo, Projeto } from '../src/lib/tipos.ts';
 
 const proj = (p: Partial<Projeto>): Projeto => ({
@@ -89,4 +89,11 @@ test('em andamento: só vale com o PC dando sinal de vida', () => {
   assert.deepEqual([...m.keys()], ['lima'], 'PC-R sem contato e o que já terminou não contam');
   assert.equal(textoAndamento(m.get('lima')!), 'L Host com o Claude no PC-L');
   assert.equal(textoAndamento({ ...m.get('lima')!, quem: null, computador: null }), 'Alguém com o Claude');
+});
+
+test('trava do Painel Woods vira "em andamento"; vencida não conta', () => {
+  const agora = Date.UTC(2026, 10, 17, 12);
+  const t = { projeto_slug: 'lima', dispositivo_id: 'PC-R', quem: 'R Host', maquina: 'PC-R', desde: new Date(agora - 3_600_000).toISOString(), renovada_em: new Date(agora - 60_000).toISOString() };
+  assert.deepEqual(daTrava(t, agora), { projeto_slug: 'lima', dispositivo_id: 'PC-R', quem: 'R Host', computador: 'PC-R', desde: t.desde, ativo: true });
+  assert.equal(daTrava({ ...t, renovada_em: new Date(agora - TRAVA_VALIDADE_MS - 1).toISOString() }, agora).ativo, false);
 });

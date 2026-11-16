@@ -1,12 +1,18 @@
--- Woods Web para a equipe (você e o sócio).
+-- Integração (versão 1.2.0 do Painel Woods): leva o banco ao modelo final, com você e o sócio na mesma equipe.
+-- Roda DEPOIS de 20261115000000_woods_web.sql e 20261116000000_sincronia_total.sql (as duas já estão em produção).
+-- Substitui a antiga 20261116000000_equipe.sql, que nunca foi aplicada.
 --
--- Antes: cada conta só via as próprias linhas (owner_id = auth.uid()).
--- Agora: os dados são da EQUIPE. Cada pessoa entra com o próprio login e vê tudo o que a equipe sincronizou.
+-- ATENÇÃO: rode no mesmo dia em que instalar a 1.2.0, com o Painel Woods FECHADO em todos os computadores.
+-- Esta migration troca a chave (owner_id, slug) por (equipe_id, slug); a versão 1.0/1.1 instalada para de sincronizar.
+--
+-- O que muda:
 --   - equipes / membros: quem faz parte de qual equipe (só se altera pelo SQL Editor, veja docs/woods-web.md)
 --   - projetos, previas, eventos e dispositivos ganham equipe_id; owner_id passa a ser "quem enviou por último"
---   - andamento: quem está com o Claude trabalhando em cada lead agora (para os dois não pegarem o mesmo)
+--   - travas: passam a ser da equipe (equipe_id, projeto_slug) e mostram quem está trabalhando no Woods Web.
+--     O banco só aceita a trava de um lead de quem é o Responsável dele (membros.nome = projetos.responsavel)
+--   - conversas e preferencias continuam de cada conta (cada um só vê as próprias)
 --   - projetos.removido_em: lead apagado do WOODS some do painel, sem apagar o histórico
---   - trava contra versão velha: um PC com o WOODS desatualizado não sobrescreve o que o outro já enviou
+--   - um gatilho só contra versão velha (recusar_versao_velha), em projetos e previas; sai o projetos_mais_novo
 --   - prints no bucket em previas/<equipe_id>/<slug>/<nome>.jpg
 --
 -- Dados que já existem: todos os usuários atuais entram na equipe "Woods" e as linhas passam a ser dela.
@@ -118,21 +124,6 @@ comment on column public.projetos.owner_id is 'Quem enviou a versão atual (últ
 -- ---------- Lead apagado do WOODS ----------
 alter table public.projetos add column removido_em timestamptz;
 
--- ---------- Quem está trabalhando em cada lead ----------
-create table public.andamento (
-  equipe_id uuid not null references public.equipes (id) on delete cascade,
-  projeto_slug text not null,
-  owner_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
-  dispositivo_id uuid not null,
-  quem text check (length(quem) <= 100),          -- nome do membro (ou o e-mail)
-  computador text check (length(computador) <= 100),
-  ativo boolean not null,                         -- o Claude está rodando agora nesse lead
-  desde timestamptz not null,
-  atualizado_em timestamptz not null default now(),
-  primary key (equipe_id, projeto_slug),
-  foreign key (equipe_id, projeto_slug) references public.projetos (equipe_id, slug) on delete cascade on update cascade
-);
-
 -- ---------- Trava contra versão velha ----------
 -- O PC com o WOODS atrasado manda uma data mais antiga (a data do commit da ficha ou do print): o banco ignora.
 create function public.recusar_versao_velha() returns trigger language plpgsql set search_path = '' as $$
@@ -144,6 +135,49 @@ begin
 end $$;
 create trigger projetos_versao_velha before update on public.projetos for each row execute function public.recusar_versao_velha();
 create trigger previas_versao_velha before update on public.previas for each row execute function public.recusar_versao_velha();
+-- O da sincronia total fazia o mesmo só em projetos: fica um gatilho só
+drop trigger projetos_mais_novo on public.projetos;
+drop function public.manter_projeto_mais_novo();
+
+-- ---------- Travas: um computador por lead, só o responsável do lead ----------
+alter table public.travas add column equipe_id uuid references public.equipes (id) on delete cascade;
+alter table public.travas add column quem text check (length(quem) <= 100); -- nome do membro, para o Woods Web
+update public.travas set equipe_id = (select id from public.equipes order by created_at limit 1);
+delete from public.travas t using public.travas u -- duas contas com o mesmo lead travado: fica a mais recente
+where t.equipe_id = u.equipe_id and t.projeto_slug = u.projeto_slug and (t.renovada_em, t.owner_id) < (u.renovada_em, u.owner_id);
+alter table public.travas alter column equipe_id set not null;
+alter table public.travas drop constraint travas_pkey;
+alter table public.travas add primary key (equipe_id, projeto_slug);
+-- Sem chave para projetos: um lead novo é travado antes de a linha dele chegar ao banco
+
+-- Quem está logado pode travar o lead? Pode se o lead ainda não está no banco, não tem responsável,
+-- ou se o responsável é o nome dele na equipe. security definer: lê membros e projetos sem passar pelo RLS
+create function public.pode_travar(equipe uuid, slug text) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select equipe in (select public.minhas_equipes()) and not exists (
+    select 1 from public.projetos p
+    where p.equipe_id = equipe and p.slug = pode_travar.slug and p.removido_em is null
+      and nullif(trim(p.responsavel), '') is not null
+      and p.responsavel is distinct from (
+        select m.nome from public.membros m where m.equipe_id = equipe and m.usuario_id = (select auth.uid())))
+$$;
+revoke execute on function public.pode_travar(uuid, text) from public, anon;
+grant execute on function public.pode_travar(uuid, text) to authenticated;
+
+drop policy "travas: dono lê" on public.travas;
+drop policy "travas: dono cria" on public.travas;
+drop policy "travas: dono altera" on public.travas;
+drop policy "travas: dono apaga" on public.travas;
+create policy "travas: equipe lê" on public.travas for select to authenticated
+  using (equipe_id in (select public.minhas_equipes()));
+create policy "travas: responsável trava" on public.travas for insert to authenticated
+  with check (owner_id = (select auth.uid()) and public.pode_travar(equipe_id, projeto_slug));
+-- Renovar a própria trava, ou tomar uma que venceu (10 min sem renovar: o PC desligou no meio)
+create policy "travas: responsável renova" on public.travas for update to authenticated
+  using (equipe_id in (select public.minhas_equipes()) and (owner_id = (select auth.uid()) or renovada_em < now() - interval '10 minutes'))
+  with check (owner_id = (select auth.uid()) and public.pode_travar(equipe_id, projeto_slug));
+create policy "travas: dono solta" on public.travas for delete to authenticated
+  using (owner_id = (select auth.uid()));
 
 -- ---------- RLS: a equipe lê; cada um só escreve em nome próprio ----------
 do $$
@@ -155,7 +189,7 @@ begin
     execute format('drop policy "%s: dono altera" on public.%I', t, t);
     execute format('drop policy "%s: dono apaga" on public.%I', t, t);
   end loop;
-  foreach t in array array['projetos', 'previas', 'eventos', 'dispositivos', 'andamento'] loop
+  foreach t in array array['projetos', 'previas', 'eventos', 'dispositivos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from anon', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);

@@ -1,5 +1,5 @@
 // Regras puras do painel (sem React nem rede): fases do status, filtros, integração e textos. Testadas em teste/.
-import type { Andamento, Dispositivo, Evento, Projeto } from './tipos.ts';
+import type { Andamento, Dispositivo, Evento, Projeto, Trava } from './tipos.ts';
 
 /** Status da ficha do WOODS: pesquisa | site pronto | aprovado | publicado | ligado | fechado | perdido */
 export type Fase = 'desenvolvimento' | 'pronto' | 'publicado' | 'perdido';
@@ -88,6 +88,16 @@ export function integracao(dispositivos: Dispositivo[], agora = Date.now()) {
 export function emAndamento(andamento: Andamento[], dispositivos: Dispositivo[], agora = Date.now()): Map<string, Andamento> {
   const vivos = new Set(dispositivos.filter((d) => situacaoDe(d, agora) === 'online').map((d) => d.id));
   return new Map(andamento.filter((a) => a.ativo && vivos.has(a.dispositivo_id)).map((a) => [a.projeto_slug, a]));
+}
+
+export const TRAVA_VALIDADE_MS = 10 * 60_000; // igual ao app: trava sem renovação há 10 min não vale mais
+
+/** Trava do Painel Woods → "em andamento" da tela. Trava vencida (PC desligou no meio) não está ativa */
+export function daTrava(t: Trava, agora = Date.now()): Andamento {
+  return {
+    projeto_slug: t.projeto_slug, dispositivo_id: t.dispositivo_id, quem: t.quem, computador: t.maquina, desde: t.desde,
+    ativo: agora - Date.parse(t.renovada_em) < TRAVA_VALIDADE_MS,
+  };
 }
 
 export const textoAndamento = (a: Andamento) => `${a.quem || 'Alguém'} com o Claude${a.computador ? ` no ${a.computador}` : ''}`;

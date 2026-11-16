@@ -1,9 +1,12 @@
 // Consultas ao Supabase. RLS garante que só voltam linhas da equipe de quem está logado.
 import { supabase } from './supabase.ts';
-import type { Andamento, Dispositivo, Evento, Membro, Previa, Projeto } from './tipos.ts';
+import type { Andamento, Dispositivo, Evento, Membro, Previa, Projeto, Trava } from './tipos.ts';
+import { daTrava } from './regras.ts';
 
 const COLUNAS_PROJETO = 'slug,nome,instagram,cidade,responsavel,nicho,status,variante_a_pronta,variante_b_pronta,url_a,url_b,repositorio_url,criado_local_em,atualizado_local_em,erro_sincronia,sincronizado_em,removido_em';
-const COLUNAS_ANDAMENTO = 'projeto_slug,dispositivo_id,quem,computador,ativo,desde';
+const COLUNAS_TRAVA = 'projeto_slug,dispositivo_id,quem,maquina,desde,renovada_em';
+/** Quem está com o Claude em cada lead: a trava que o Painel Woods põe antes de começar */
+const ativas = (t: Trava[]): Andamento[] => t.map((x) => daTrava(x)).filter((a) => a.ativo);
 const COLUNAS_DISPOSITIVO = 'id,nome,versao_app,conectado,ultimo_contato,ultima_sincronizacao,pendentes,ultimo_erro';
 
 function cliente() {
@@ -36,7 +39,7 @@ export async function carregarGeral(): Promise<Geral> {
     ok<Projeto[]>(sb.from('projetos').select(COLUNAS_PROJETO).is('removido_em', null)
       .order('atualizado_local_em', { ascending: false, nullsFirst: false }).limit(1000)),
     ok<Dispositivo[]>(sb.from('dispositivos').select(COLUNAS_DISPOSITIVO).order('ultimo_contato', { ascending: false }).limit(10)),
-    ok<Andamento[]>(sb.from('andamento').select(COLUNAS_ANDAMENTO).eq('ativo', true)),
+    ok<Trava[]>(sb.from('travas').select(COLUNAS_TRAVA)).then(ativas),
     ok<Membro[]>(sb.from('membros').select('usuario_id,nome')),
   ]);
   const eu = membros.find((m) => m.usuario_id === s.session?.user.id)?.nome ?? '';
@@ -56,7 +59,7 @@ export async function carregarDetalhe(slug: string): Promise<Detalhe> {
     ok<Projeto | null>(sb.from('projetos').select(COLUNAS_PROJETO).eq('slug', slug).maybeSingle()),
     ok<Evento[]>(sb.from('eventos').select('id,projeto_slug,tipo,detalhe,ocorrido_em').eq('projeto_slug', slug).order('ocorrido_em', { ascending: false }).limit(200)),
     ok<Previa[]>(sb.from('previas').select('projeto_slug,nome,variante,aparelho,storage_path,atualizado_local_em').eq('projeto_slug', slug)),
-    ok<Andamento[]>(sb.from('andamento').select(COLUNAS_ANDAMENTO).eq('projeto_slug', slug).eq('ativo', true)),
+    ok<Trava[]>(sb.from('travas').select(COLUNAS_TRAVA).eq('projeto_slug', slug)).then(ativas),
     ok<Dispositivo[]>(sb.from('dispositivos').select(COLUNAS_DISPOSITIVO).limit(10)),
   ]);
   // Reaproveita a URL assinada enquanto o print não mudar e faltar mais de 10 min para vencer:
