@@ -34,7 +34,7 @@ export function conferirConfig({ url = '', anonKey = '' } = {}) {
 }
 
 export function criarCliente({ url, anonKey, fetch, tempo = 20_000 }) {
-  async function pedir(caminho, { metodo = 'POST', token, corpo, cabecalhos = {} } = {}) {
+  async function pedir(caminho, { metodo = 'POST', token, corpo, cabecalhos = {}, bruto = false } = {}) {
     let r;
     try {
       r = await fetch(`${url}${caminho}`, {
@@ -46,7 +46,10 @@ export function criarCliente({ url, anonKey, fetch, tempo = 20_000 }) {
     } catch (e) {
       throw new ErroNuvem(`Sem conexão com o Supabase (${e.name === 'TimeoutError' ? 'tempo esgotado' : e.message})`, { temporario: true });
     }
-    if (r.ok) return r.status === 204 ? null : r.json().catch(() => null);
+    if (r.ok) {
+      if (bruto) return Buffer.from(await r.arrayBuffer());
+      return r.status === 204 ? null : r.json().catch(() => null);
+    }
     const info = await r.json().catch(() => ({}));
     const msg = info.msg || info.message || info.error_description || info.error || `HTTP ${r.status}`;
     throw new ErroNuvem(String(msg).slice(0, 300), {
@@ -93,6 +96,24 @@ export function criarCliente({ url, anonKey, fetch, tempo = 20_000 }) {
     /** Altera as linhas que batem com os filtros */
     alterar: (tabela, filtros, dados, { token }) => pedir(`/rest/v1/${tabela}?${new URLSearchParams(filtros)}`, {
       metodo: 'PATCH', token, corpo: json(dados), cabecalhos: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    }),
+    /** Linhas da tabela (o RLS já filtra pelo dono). consulta: "select=a,b&campo=eq.valor" */
+    ler: (tabela, consulta, { token }) => pedir(`/rest/v1/${tabela}?${consulta}`, { metodo: 'GET', token }),
+    /** Insere sem upsert: se a chave já existe, o Supabase responde 409 (outro computador chegou antes) */
+    inserir: (tabela, linhas, { token }) => pedir(`/rest/v1/${tabela}`, {
+      token, corpo: json(linhas), cabecalhos: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    }),
+    /** Altera as linhas que batem com o filtro e devolve as alteradas ([] = nenhuma bateu) */
+    atualizar: (tabela, consulta, dados, { token }) => pedir(`/rest/v1/${tabela}?${consulta}`, {
+      metodo: 'PATCH', token, corpo: json(dados), cabecalhos: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    }),
+    apagar: (tabela, consulta, { token }) => pedir(`/rest/v1/${tabela}?${consulta}`, { metodo: 'DELETE', token, cabecalhos: { Prefer: 'return=minimal' } }),
+    baixarArquivo: (bucket, caminho, { token }) => pedir(
+      `/storage/v1/object/authenticated/${bucket}/${caminho.split('/').map(encodeURIComponent).join('/')}`,
+      { metodo: 'GET', token, bruto: true },
+    ),
+    apagarArquivos: (bucket, caminhos, { token }) => pedir(`/storage/v1/object/${bucket}`, {
+      metodo: 'DELETE', token, corpo: json({ prefixes: caminhos }), cabecalhos: { 'Content-Type': 'application/json' },
     }),
     enviarArquivo: (bucket, caminho, conteudo, tipo, { token }) => pedir(
       `/storage/v1/object/${bucket}/${caminho.split('/').map(encodeURIComponent).join('/')}`,

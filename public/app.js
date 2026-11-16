@@ -46,9 +46,10 @@ async function carregarLista() {
   estado.leads = s.leads;
   estado.rodando = s.rodando;
   const aviso = $('#aviso');
-  aviso.hidden = !s.falta.length && !s.novidades;
+  aviso.hidden = !s.falta.length && !s.novidades && !s.conflito;
   aviso.textContent = s.falta.length ? 'Configuração incompleta. Abrir as configurações.'
-    : `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`} que precisam do botão Atualizar. Abrir as configurações.`;
+    : s.conflito ? 'A sincronização entre computadores tem um conflito. Abrir as configurações.'
+      : `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`} que precisam do botão Atualizar. Abrir as configurações.`;
   const nova = $('#nova-versao');
   nova.hidden = !s.versaoNova;
   if (s.versaoNova) {
@@ -247,7 +248,7 @@ form.onsubmit = async (e) => {
   botao.disabled = true;
   try {
     const dados = Object.fromEntries(new FormData(form));
-    if (!await conferirEquipe(dados.slug || slugar(dados.nome), true)) return;
+    if (!await conferirEquipe(dados.slug || slugar(dados.nome))) return;
     lembrar('responsavel', dados.responsavel);
     const { slug } = await api('criar', dados);
     await carregarLista();
@@ -263,19 +264,18 @@ form.onsubmit = async (e) => {
 const hora = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
 /**
- * Antes de pôr o Claude para trabalhar: avisa se o sócio está com o Claude nesse lead agora
- * ou, num lead novo, se ele já existe na equipe. Sem Woods Web ou sem internet, segue sem perguntar.
+ * Antes de criar um lead: se ele já existe na equipe, avisa (criar de novo duplica o trabalho).
+ * Quem está com o Claude num lead é conferido pela trava, que bloqueia. Sem Woods Web ou sem internet, segue sem perguntar.
  */
-async function conferirEquipe(slug, novo) {
+async function conferirEquipe(slug) {
   const r = await api('equipeLead', { slug }).catch(() => null);
   if (!r) return true;
-  const a = r.andamento;
+  const a = r.trava;
   if (a) {
-    const onde = a.computador ? ` (no ${a.computador}, desde ${hora(a.desde)})` : '';
-    return confirm(`${a.quem || 'Alguém da equipe'} está com o Claude neste lead agora${onde}.\n\n`
-      + 'Se os dois mexerem no mesmo lead, vai dar conflito no GitHub. Continuar mesmo assim?');
+    toast(`${a.quem || 'Alguém da equipe'} está com o Claude neste lead agora (no ${a.computador || 'outro computador'}, desde ${hora(a.desde)}).`);
+    return false;
   }
-  if (novo && r.projeto) {
+  if (r.projeto) {
     const info = [r.projeto.responsavel && `responsável: ${r.projeto.responsavel}`, r.projeto.status && `status: ${r.projeto.status}`].filter(Boolean).join(', ');
     return confirm(`O lead "${slug}" já existe na equipe${info ? ` (${info})` : ''}.\n\n`
       + 'Criar de novo aqui duplica o trabalho. O melhor é esperar o WOODS atualizar (ou clicar em Atualizar WOODS nas configurações) e abrir o lead que já existe. Criar mesmo assim?');
@@ -305,7 +305,13 @@ async function abrirLead(slug) {
 window.painel.ouvir((slug, linha) => {
   const ev = JSON.parse(linha);
   if (ev.t === 'progresso') progresso(ev);
-  else if (slug === estado.aoVivo) receber(ev);
+  // Chegou trabalho de outro computador: lista, prévia e, se o lead aberto mudou, a conversa
+  else if (ev.t === 'woods') {
+    carregarLista().catch(() => {});
+    if (estado.atual && ev.leads?.includes(estado.atual) && !estado.rodandoAqui && !$('#tela-lead').hidden) atualizarLead().catch(() => {});
+  } else if (ev.t === 'conversa') {
+    if (ev.slug === estado.atual && !estado.rodandoAqui && !$('#tela-lead').hidden) abrirLead(ev.slug);
+  } else if (slug === estado.aoVivo) receber(ev);
 });
 
 async function atualizarLead() {
@@ -317,6 +323,7 @@ async function atualizarLead() {
   if (l.status === 'site pronto') links.push('<button id="aprovar" class="btn primario" type="button">Aprovar e publicar</button>');
   $('#lead-acoes').innerHTML = links.join('');
   $('#aprovar')?.addEventListener('click', aprovar);
+  desenharChat();
   desenharPalco();
 }
 
@@ -398,6 +405,23 @@ function ajustarEscala() {
 new ResizeObserver(ajustarEscala).observe($('#palco'));
 
 // ---------- Conversa com o Claude ----------
+const NAO_PERMITIDO = 'Não permitido: este lead é de outro responsável.';
+
+/**
+ * Campo, botões e atalhos do chat. No lead de outro responsável (com o Woods Web conectado) fica tudo desligado com
+ * "Não permitido" e nada é enviado; o main e o banco conferem de novo.
+ */
+function desenharChat() {
+  const pode = estado.lead?.permitido !== false;
+  const msg = $('#msg');
+  msg.disabled = !pode;
+  msg.placeholder = pode ? 'Peça um ajuste ou responda o Claude…' : `Não permitido. Este lead é de ${estado.lead.responsavel || 'outro responsável'}.`;
+  $('#mandar').disabled = !pode || estado.rodandoAqui;
+  $('#escolher').disabled = !pode;
+  $('#atalhos').hidden = !pode || estado.rodandoAqui;
+  $('#aprovar')?.toggleAttribute('hidden', !pode);
+}
+
 function receber(ev) {
   const log = $('#log');
   const noFim = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
@@ -436,8 +460,7 @@ function receber(ev) {
       estado.rodandoAqui = ev.rodando;
       $('#trabalhando').hidden = !ev.rodando;
       $('#parar').hidden = !ev.rodando;
-      $('#mandar').disabled = ev.rodando;
-      $('#atalhos').hidden = ev.rodando;
+      desenharChat();
       if (ev.rodando) estado.rodando = estado.atual;
       if (terminou) {
         atualizarLead().catch(() => {});
@@ -468,7 +491,7 @@ $('#log').onclick = async (e) => {
 };
 
 async function mandar(texto) {
-  if (!await conferirEquipe(estado.atual, false)) return false;
+  if (estado.lead && !estado.lead.permitido) { toast(NAO_PERMITIDO); return false; }
   try {
     await api('mensagem', { slug: estado.atual, texto });
     return true;
