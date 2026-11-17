@@ -46,21 +46,31 @@ async function carregarLista() {
   estado.leads = s.leads;
   estado.rodando = s.rodando;
   const aviso = $('#aviso');
-  aviso.hidden = !s.falta.length && !s.novidades;
+  aviso.hidden = !s.falta.length && !s.novidades && !s.conflito;
   aviso.textContent = s.falta.length ? 'Configuração incompleta. Abrir as configurações.'
-    : `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`}. Abrir as configurações.`;
+    : s.conflito ? 'A sincronização entre computadores tem um conflito. Abrir as configurações.'
+      : `O WOODS tem ${s.novidades === 1 ? '1 atualização' : `${s.novidades} atualizações`} que precisam do botão Atualizar. Abrir as configurações.`;
+  const nova = $('#nova-versao');
+  nova.hidden = !s.versaoNova;
+  if (s.versaoNova) {
+    nova.textContent = s.versaoNova.portatil ? `Versão ${s.versaoNova.versao} disponível. Baixar no GitHub.`
+      : `Versão ${s.versaoNova.versao} pronta. Clique para reiniciar e atualizar.`;
+  }
   desenharLista();
   if (!$('#tela-config').hidden) desenharConfig();
 }
+$('#nova-versao').onclick = () => api('atualizarApp').catch((err) => toast(err.message));
 
 function desenharLista() {
   const q = $('#busca').value.trim().toLowerCase();
   const itens = estado.leads.filter((l) => `${l.nome} ${l.slug} ${l.cidade}`.toLowerCase().includes(q));
   $('#lista').innerHTML = itens.map((l) => `
-    <a class="item${l.slug === estado.atual ? ' ativo' : ''}" href="#/lead/${esc(l.slug)}">
-      <span class="item-nome">${esc(l.nome)}${estado.rodando === l.slug ? '<span class="pulso" title="Claude trabalhando"></span>' : ''}</span>
-      <span class="item-meta">${pill(l.status)}${l.cidade ? `<span>${esc(l.cidade)}</span>` : ''}</span>
+    <a class="item${l.slug === estado.atual ? ' ativo' : ''}" href="#/lead/${esc(l.slug)}" title="${esc([l.status, l.cidade].filter(Boolean).join(', '))}">
+      <i class="bolinha" data-status="${esc(l.status)}"></i>
+      <span class="item-nome">${esc(l.nome)}</span>
+      ${estado.rodando === l.slug ? '<span class="pulso" title="Claude trabalhando"></span>' : `<span class="item-meta">${esc(l.status)}</span>`}
     </a>`).join('') || `<p class="vazio-lista">${q ? 'Nada encontrado.' : 'Nenhum lead ainda.'}</p>`;
+  $('#conta').textContent = itens.length || '';
   const s = $('#claude-status');
   s.textContent = estado.rodando ? `Trabalhando em ${estado.rodando}` : 'Claude livre';
   s.classList.toggle('ativo', Boolean(estado.rodando));
@@ -90,6 +100,7 @@ function mostrarConfig() {
   $('#c-navegador').value = c.navegador;
   $('#c-git-nome').value = c.gitNome;
   $('#c-git-email').value = c.gitEmail;
+  $('#c-resp').value = c.responsaveis.join(', ');
   desenharConfig();
   checar();
 }
@@ -195,6 +206,10 @@ $('#p-git').onsubmit = (e) => {
   e.preventDefault();
   salvarConfig({ gitNome: $('#c-git-nome').value, gitEmail: $('#c-git-email').value }, 'Assinatura salva.');
 };
+$('#p-resp').onsubmit = (e) => {
+  e.preventDefault();
+  salvarConfig({ responsaveis: $('#c-resp').value }, 'Responsáveis salvos.');
+};
 $('#form-chave').onsubmit = async (e) => {
   e.preventDefault();
   try {
@@ -217,7 +232,10 @@ function mostrarNovo() {
   mostrar('#tela-novo');
   form.reset();
   slugManual = false;
-  form.responsavel.value = lembrar('responsavel') || 'R Host';
+  const resp = estado.sit.config.responsaveis;
+  form.responsavel.innerHTML = resp.map((r) => `<option>${esc(r)}</option>`).join('');
+  // O último escolhido aqui; senão o meu nome na equipe do Woods Web; senão o primeiro da lista
+  form.responsavel.value = [lembrar('responsavel'), estado.sit.eu].find((r) => resp.includes(r)) || resp[0];
   form.nome.focus();
 }
 
@@ -230,6 +248,7 @@ form.onsubmit = async (e) => {
   botao.disabled = true;
   try {
     const dados = Object.fromEntries(new FormData(form));
+    if (!await conferirEquipe(dados.slug || slugar(dados.nome))) return;
     lembrar('responsavel', dados.responsavel);
     const { slug } = await api('criar', dados);
     await carregarLista();
@@ -240,6 +259,29 @@ form.onsubmit = async (e) => {
     botao.disabled = false;
   }
 };
+
+// ---------- Equipe (Woods Web) ----------
+const hora = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+/**
+ * Antes de criar um lead: se ele já existe na equipe, avisa (criar de novo duplica o trabalho).
+ * Quem está com o Claude num lead é conferido pela trava, que bloqueia. Sem Woods Web ou sem internet, segue sem perguntar.
+ */
+async function conferirEquipe(slug) {
+  const r = await api('equipeLead', { slug }).catch(() => null);
+  if (!r) return true;
+  const a = r.trava;
+  if (a) {
+    toast(`${a.quem || 'Alguém da equipe'} está com o Claude neste lead agora (no ${a.computador || 'outro computador'}, desde ${hora(a.desde)}).`);
+    return false;
+  }
+  if (r.projeto) {
+    const info = [r.projeto.responsavel && `responsável: ${r.projeto.responsavel}`, r.projeto.status && `status: ${r.projeto.status}`].filter(Boolean).join(', ');
+    return confirm(`O lead "${slug}" já existe na equipe${info ? ` (${info})` : ''}.\n\n`
+      + 'Criar de novo aqui duplica o trabalho. O melhor é esperar o WOODS atualizar (ou clicar em Atualizar WOODS nas configurações) e abrir o lead que já existe. Criar mesmo assim?');
+  }
+  return true;
+}
 
 // ---------- Lead ----------
 async function abrirLead(slug) {
@@ -263,7 +305,13 @@ async function abrirLead(slug) {
 window.painel.ouvir((slug, linha) => {
   const ev = JSON.parse(linha);
   if (ev.t === 'progresso') progresso(ev);
-  else if (slug === estado.aoVivo) receber(ev);
+  // Chegou trabalho de outro computador: lista, prévia e, se o lead aberto mudou, a conversa
+  else if (ev.t === 'woods') {
+    carregarLista().catch(() => {});
+    if (estado.atual && ev.leads?.includes(estado.atual) && !estado.rodandoAqui && !$('#tela-lead').hidden) atualizarLead().catch(() => {});
+  } else if (ev.t === 'conversa') {
+    if (ev.slug === estado.atual && !estado.rodandoAqui && !$('#tela-lead').hidden) abrirLead(ev.slug);
+  } else if (slug === estado.aoVivo) receber(ev);
 });
 
 async function atualizarLead() {
@@ -275,6 +323,7 @@ async function atualizarLead() {
   if (l.status === 'site pronto') links.push('<button id="aprovar" class="btn primario" type="button">Aprovar e publicar</button>');
   $('#lead-acoes').innerHTML = links.join('');
   $('#aprovar')?.addEventListener('click', aprovar);
+  desenharChat();
   desenharPalco();
 }
 
@@ -306,6 +355,7 @@ $('#aparelhos').onclick = (e) => {
 $('#recarregar').onclick = () => atualizarLead().catch((err) => toast(err.message));
 
 function desenharPalco() {
+  soltarEscolha(); // a prévia vai ser trocada e o seletor some junto
   const l = estado.lead;
   const palco = $('#palco');
   const v = estado.vista;
@@ -355,6 +405,23 @@ function ajustarEscala() {
 new ResizeObserver(ajustarEscala).observe($('#palco'));
 
 // ---------- Conversa com o Claude ----------
+const NAO_PERMITIDO = 'Não permitido: este lead é de outro responsável.';
+
+/**
+ * Campo, botões e atalhos do chat. No lead de outro responsável (com o Woods Web conectado) fica tudo desligado com
+ * "Não permitido" e nada é enviado; o main e o banco conferem de novo.
+ */
+function desenharChat() {
+  const pode = estado.lead?.permitido !== false;
+  const msg = $('#msg');
+  msg.disabled = !pode;
+  msg.placeholder = pode ? 'Peça um ajuste ou responda o Claude…' : `Não permitido. Este lead é de ${estado.lead.responsavel || 'outro responsável'}.`;
+  $('#mandar').disabled = !pode || estado.rodandoAqui;
+  $('#escolher').disabled = !pode;
+  $('#atalhos').hidden = !pode || estado.rodandoAqui;
+  $('#aprovar')?.toggleAttribute('hidden', !pode);
+}
+
 function receber(ev) {
   const log = $('#log');
   const noFim = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
@@ -393,8 +460,7 @@ function receber(ev) {
       estado.rodandoAqui = ev.rodando;
       $('#trabalhando').hidden = !ev.rodando;
       $('#parar').hidden = !ev.rodando;
-      $('#mandar').disabled = ev.rodando;
-      $('#atalhos').hidden = ev.rodando;
+      desenharChat();
       if (ev.rodando) estado.rodando = estado.atual;
       if (terminou) {
         atualizarLead().catch(() => {});
@@ -425,6 +491,7 @@ $('#log').onclick = async (e) => {
 };
 
 async function mandar(texto) {
+  if (estado.lead && !estado.lead.permitido) { toast(NAO_PERMITIDO); return false; }
   try {
     await api('mensagem', { slug: estado.atual, texto });
     return true;
@@ -446,7 +513,39 @@ $('#msg').onkeydown = (e) => {
   }
 };
 $('#atalhos').onclick = (e) => { const t = e.target.closest('[data-texto]')?.dataset.texto; if (t) mandar(t); };
-$('#parar').onclick = () => api('parar', { slug: estado.atual }).catch((err) => toast(err.message));
+// ---------- Escolher um elemento na prévia e citar no pedido ----------
+let escolha = 0; // conta as escolhas: resposta de uma escolha já cancelada é ignorada
+function soltarEscolha() {
+  escolha++;
+  $('#escolher').setAttribute('aria-pressed', 'false');
+}
+$('#escolher').onclick = async () => {
+  const b = $('#escolher');
+  if (b.getAttribute('aria-pressed') === 'true') {
+    soltarEscolha();
+    api('escolherElemento', { cancelar: true }).catch(() => {});
+    return;
+  }
+  const v = estado.vista;
+  if (!estado.lead?.site[v]) { toast('Abra a variante A ou B para escolher um elemento.'); return; }
+  const n = ++escolha;
+  b.setAttribute('aria-pressed', 'true');
+  try {
+    const el = await api('escolherElemento');
+    if (n !== escolha || !el) return;
+    const msg = $('#msg');
+    const antes = msg.value.trimEnd();
+    msg.value = `${antes ? `${antes}\n` : ''}Na variante ${v.toUpperCase()} (${estado.aparelho}), no elemento \`${el.seletor}\`${el.texto ? ` ("${el.texto}")` : ''}: `;
+    msg.focus();
+    msg.selectionStart = msg.selectionEnd = msg.value.length;
+  } catch (err) {
+    if (n === escolha) toast(err.message);
+  } finally {
+    if (n === escolha) soltarEscolha();
+  }
+};
+
+$('#parar').onclick =() => api('parar', { slug: estado.atual }).catch((err) => toast(err.message));
 
 // ---------- Início ----------
 carregarLista().then(rota).catch((err) => toast(err.message));

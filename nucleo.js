@@ -6,6 +6,25 @@ import { SLUG_OK } from './public/util.js';
 // ---------- Configurações (%APPDATA%\PainelWoods\config.json) ----------
 export const MODELOS = ['claude-opus-5-5', 'claude-fable-5-2'];
 export const NAVEGADORES = ['', 'chrome', 'edge']; // '' = automático
+export const RESPONSAVEIS = ['R Host', 'L Host']; // padrão; muda em Configurações
+
+/** Lista de responsáveis: texto separado por vírgula ou lista. Sem repetidos, até 10, 40 letras cada */
+export function responsaveis(v) {
+  const lista = (Array.isArray(v) ? v : String(v ?? '').split(','))
+    .map((r) => String(r).replace(/[\r\n,]+/g, ' ').trim().slice(0, 40)).filter(Boolean);
+  const unicos = [...new Set(lista)].slice(0, 10);
+  return unicos.length ? unicos : [...RESPONSAVEIS];
+}
+
+/** "1.2.0" é mais nova que "1.10.0"? Só números (x.y.z); o resto não conta como versão nova */
+export function maisNova(v, atual) {
+  const n = (x) => (/^\d+\.\d+\.\d+$/.test(x) ? x.split('.').map(Number) : null);
+  const a = n(String(v).replace(/^v/, ''));
+  const b = n(String(atual));
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
+}
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const linha = (v) => String(v ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
 
@@ -18,6 +37,7 @@ export function validar(c = {}) {
     gitEmail: EMAIL.test(email) ? email : '',
     navegador: NAVEGADORES.includes(c.navegador) ? c.navegador : '',
     chaveApi: typeof c.chaveApi === 'string' ? c.chaveApi : '', // cifrada pelo safeStorage (DPAPI), em base64
+    responsaveis: responsaveis(c.responsaveis),
   };
 }
 

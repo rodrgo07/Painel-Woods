@@ -37,7 +37,10 @@ Quem tinha a versão antiga pode importar as conversas em "Importar conversas de
 - **Ajustes**: escreva no campo da conversa ("troque a cor do botão da B", "use outra foto no hero").
 - **Aprovar e publicar**: o botão aparece quando a ficha está em `site pronto`; o Claude segue as etapas 7 e 8.
 - **Parar**: interrompe o Claude na hora e fecha o navegador dele.
-- **Atualizar WOODS** (Configurações): puxa as novidades do GitHub só avançando (`--ff-only`). Se bater com trabalho local de um lead, recusa e não altera nada. Ao abrir, o app só avisa se há novidades.
+- **WOODS em dia sozinho**: ao abrir e a cada 10 minutos, com o Claude parado, o app puxa as novidades do GitHub só avançando (`--ff-only`), sem janela de login. Se as novidades mexem nas dependências, ou se batem com trabalho local de um lead, ele não mexe em nada e avisa; aí vale o botão **Atualizar WOODS** (Configurações), que também instala as dependências.
+- **Trabalho em equipe** (com o Woods Web conectado): cada lead é do seu **Responsável**. O Claude só trabalha nos seus leads; no lead do sócio o chat mostra **Não permitido** (e vale o mesmo para ele nos seus). Um lead em uso num computador fica travado para os outros. Num lead novo, o app avisa se ele já existe na equipe.
+- **Responsáveis** (Configurações): os nomes que aparecem em "Responsável" no novo lead. Use os mesmos nomes da equipe no Woods Web.
+- **Versão nova do app**: quando sai uma Release nova no GitHub (`rodrgo07/Painel-Woods`), o app baixa sozinho e mostra "Versão x pronta" na barra lateral. Um clique reinicia já atualizado; se ninguém clicar, instala ao fechar.
 
 Um lead por vez: o navegador do Playwright é um só. Cada lead tem sua sessão do Claude, então dá para voltar dias
 depois e continuar a conversa. Fechar a janela para o Claude e encerra tudo que o app abriu.
@@ -53,6 +56,7 @@ Tudo em `%APPDATA%\PainelWoods`. Nada é gravado na pasta de instalação.
 | Erros | `logs\painel-AAAA-MM-DD.log` |
 | Chromium baixado (se precisou) | `navegadores\` |
 | Woods Web: conexão (token cifrado) e fila de envio | `nuvem.json`, `nuvem-estado.json` |
+| Espelho do WOODS entre computadores (última foto, conflito) | `espelho.json` |
 
 Dois itens ficam fora dessa pasta, por conta de quem os guarda: o login do GitHub (Gerenciador de Credenciais do
 Windows) e o login da conta do Claude (`%USERPROFILE%\.claude`, gravado pelo próprio Claude Code).
@@ -75,6 +79,20 @@ npm run dist
 ```
 Sai em `dist/`: `Painel-Woods-Setup-<versão>.exe` e `Painel-Woods-<versão>-portable.exe`. A versão vem do `package.json`.
 
+### Lançar uma versão (atualização automática)
+```
+npm version 1.2.1 --no-git-tag-version
+git commit -am "Versão 1.2.1"
+git push
+npm run lancar
+```
+`npm run lancar` gera o instalador e cria o release `v<versão>` como rascunho em `rodrgo07/Painel-Woods`, com o `latest.yml`.
+Escreva as notas no GitHub e publique. O app instalado confere ao abrir e a cada hora, baixa em segundo plano e mostra
+"Versão x pronta" na barra lateral: um clique reinicia já atualizado. Se ninguém clicar, instala ao fechar o app.
+O portátil não se atualiza: mostra o aviso e abre a página do release. Os dados em `%APPDATA%\PainelWoods` ficam.
+Precisa do GitHub CLI (`gh`) logado. Para testar sem publicar, rode `npm start` com `PAINEL_TESTAR_ATUALIZACAO=1` e um
+`dev-app-update.yml` na raiz apontando para um servidor local (provider `generic`).
+
 ### Assinatura
 O build funciona sem certificado. Para assinar, defina antes do `npm run dist` as variáveis que o electron-builder lê:
 ```
@@ -83,11 +101,24 @@ set CSC_KEY_PASSWORD=senha-do-certificado
 ```
 Não coloque o certificado nem a senha no repositório.
 
-## Woods Web (opcional)
-Painel online e privado com todos os sites, para consultar do celular ou de outro computador sem o PC ligado.
-O Painel Woods continua igual; um serviço à parte (`sincronia/`) só lê as fichas e os prints do WOODS e envia
-os metadados ao Supabase. Conversas, chaves e credenciais nunca saem do computador. Sem internet, os envios
-esperam numa fila e seguem quando a conexão volta.
+## Vários computadores
+O mesmo trabalho no PC de casa e nos notebooks, como se fosse um computador só. Detalhes e casos de conflito:
+[docs/sincronia.md](docs/sincronia.md).
+
+- **Pasta do WOODS** (leads, sites, fichas, prints, inclusive o que ainda não tem commit): vai e volta pelo GitHub
+  numa referência própria (`refs/painel/espelho`), que não é branch. O `main` só muda com o push do lead aprovado, como antes.
+- **Conversas, sessões do Claude e preferências**: pelo Woods Web (Supabase), por conta. Conecte a mesma conta nos
+  seus computadores; o sócio usa a dele e não vê as suas conversas.
+- **Um lead, um computador**: enquanto o Claude trabalha num lead, nenhum outro computador da equipe começa nele.
+- **O sócio**: usa a mesma pasta do WOODS (o mesmo espelho) e o mesmo Woods Web, com a conta dele. Cada um só põe o
+  Claude nos leads em que é o responsável.
+- Fica em cada computador: o login do GitHub, o login do Claude ou a chave da API, o navegador dos prints.
+
+## Woods Web
+Painel online e privado com todos os sites, para consultar do celular ou de outro computador sem o PC ligado,
+e o caminho das conversas e preferências entre os computadores. O serviço `sincronia/` lê as fichas e os prints do
+WOODS e envia os metadados, as conversas (compactadas, no bucket privado `conversas`) e as preferências ao Supabase.
+Chaves e credenciais nunca saem do computador. Sem internet, os envios esperam numa fila e seguem quando a conexão volta.
 
 - Configurar tudo (Supabase, conta, conexão do app): [docs/woods-web.md](docs/woods-web.md)
 - Publicar o painel web no Cloudflare Pages: [docs/cloudflare-pages.md](docs/cloudflare-pages.md)
@@ -99,7 +130,8 @@ esperam numa fila e seguem quando a conexão volta.
 - `painel.js`: leads e conversa com o Claude (Agent SDK)
 - `woods.js`: WOODS (clonar, instalar, atualizar), navegador e ferramentas embutidas
 - `nucleo.js`: configuração, caminho seguro de arquivos e log
-- `sincronia/`: envio ao Woods Web (leitura do WOODS, fila offline, cliente do Supabase). Não mexe nos leads nem no Claude
+- `sincronia/`: tudo entre computadores e o Woods Web. `espelho.js` (pasta do WOODS pelo git), `servico.js` (Supabase:
+  projetos, conversas, preferências, travas), `conversas.js`, `mapa.js`, `fila.js` (offline) e `supabase.js` (cliente)
 - `supabase/migrations/`: tabelas, índices e políticas RLS do Woods Web
 - `web/`: o Woods Web (React + Vite), publicado à parte no Cloudflare Pages
 - `public/`: a página (`index.html`, `app.js`, `style.css`), `nuvem.js` (cartão do Woods Web) e `util.js` (funções usadas pelos dois lados)

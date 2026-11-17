@@ -1,66 +1,83 @@
-# Passo a passo manual
+# Passo a passo: instalar a versão 1.2.0
 
-## Parte 1: deixar o Painel Woods funcionando hoje (até 00:30)
+A 1.2.0 junta tudo o que estava em branches separadas: atualização automática do app, escolher um elemento da
+prévia, modo equipe com o sócio e os computadores sincronizados como um só. O banco e o app mudam **no mesmo dia**:
+a migration de integração troca a chave dos projetos, e a versão antiga do app para de sincronizar depois dela.
 
-O Woods Web é opcional. Enquanto você não conectar uma conta, o app funciona exatamente como antes.
-**Não faça a Parte 2 hoje se o prazo apertar**: ela não é necessária para o app funcionar.
+Ordem: **1** testar num Supabase de teste → **2** banco de produção → **3** instalar nos quatro computadores (logo depois do 2) →
+**4** Woods Web → **5** arrumar. Detalhes do Supabase em [woods-web.md](woods-web.md) e da sincronização em
+[sincronia.md](sincronia.md).
 
-1. **Espere o instalador novo ficar pronto** (previsão: 23:55). Ele está pronto quando os dois arquivos abaixo
-   tiverem horário depois de 23:31:
-   - `dist\Painel-Woods-Setup-1.0.0.exe`
-   - `dist\Painel-Woods-1.0.0-portable.exe`
-2. **Feche o Painel Woods**, se estiver aberto. Se houver um lead com o Claude trabalhando, espere terminar ou clique em **Parar**.
-3. **Dê dois cliques em `dist\Painel-Woods-Setup-1.0.0.exe`**. Se aparecer "O Windows protegeu o computador":
-   **Mais informações** → **Executar assim mesmo**. A instalação substitui a versão antiga; leads, conversas,
-   configurações e login ficam (estão em `%APPDATA%\PainelWoods`).
-4. **Abra o Painel Woods** e confira (2 minutos):
-   - [ ] A lista de leads aparece.
-   - [ ] Abrir um lead mostra a prévia A/B e os prints.
-   - [ ] Em **Configurações**, os passos 1 a 5 estão "pronto" e há um cartão novo **Woods Web (opcional)**, "desligado".
-5. **Se algo não funcionar**: feche o app e use a versão anterior, que guardei em
-   `reserva\Painel-Woods-1.0.0-portable-ANTERIOR.exe` (dois cliques, não precisa instalar; usa os mesmos dados).
+## 1. Testar sem tocar no que está funcionando
 
-## Parte 2: colocar o Woods Web online (depois, com calma; ~30 min)
+O plano grátis do Supabase permite dois projetos ativos, então dá para ter um de teste.
 
-Detalhes e prints de tela em [woods-web.md](woods-web.md) e [cloudflare-pages.md](cloudflare-pages.md).
+1. Supabase → **New project** `woods-web-teste`. No **SQL Editor**, rode em ordem (cada um numa query nova):
+   `20261115000000_woods_web.sql`, `20261116000000_sincronia_total.sql`, `20261117000000_integracao.sql`.
+2. Crie uma conta de teste (**Authentication → Users → Add user**, com **Auto Confirm User**) e rode
+   `select public.adicionar_membro('<e-mail de teste>', 'R Host');`.
+3. No PC de casa, na pasta do Painel-Woods: `npm test` (tudo verde) e `npm start` com um `.env` que aponte
+   `PAINEL_DADOS` para uma pasta de teste. Conecte o cartão **Woods Web** no projeto de teste.
+4. Crie um lead de teste com Responsável **R Host** e confira que ele aparece no Woods Web de teste com os prints.
+5. Se der, repita num notebook com a mesma conta de teste: o lead e a conversa precisam aparecer lá.
+6. Tudo certo: faça o merge do pull request `integracao` no `main`.
 
-### A. Subir o código para o GitHub
-Peça ao Claude para fazer o commit e o push no `rodrgo07/Painel-Woods`, ou faça você mesmo.
+## 2. Banco de produção (no dia da instalação)
 
-### B. Supabase (banco, login e imagens)
-1. <https://supabase.com> → criar conta → **New project**: nome `woods-web`, região **São Paulo**, plano **Free**.
-   Guarde a senha do banco num gerenciador de senhas.
-2. **SQL Editor** → **New query** → cole todo o arquivo `supabase/migrations/20261115000000_woods_web.sql` → **Run**.
-   Deve aparecer "Success".
-3. **Authentication** → **Users** → **Add user** → **Create new user**: seu e-mail, senha forte, marque **Auto Confirm User**.
-4. **Authentication** → **Sign In / Providers** → desligue **Allow new users to sign up** → salvar.
-5. **Project Settings** → **API Keys**: anote a **Project URL** e a chave **anon** (`eyJ…`) ou **publishable**
-   (`sb_publishable_…`). **Nunca** use a `service_role` nem a `sb_secret_…`.
+1. **Feche o Painel Woods em todos os computadores**, com nenhum lead rodando.
+2. Supabase (projeto **Woods Web**) → **SQL Editor** → cole `supabase/migrations/20261117000000_integracao.sql` → **Run**.
+   Só esse arquivo: os outros dois já estão aplicados.
+3. **Authentication → Users → Add user**: crie a conta do sócio com **Auto Confirm User**.
+4. No **SQL Editor**, ponha os dois na equipe com o nome igual ao do **Responsável** nas fichas:
+   ```sql
+   select public.adicionar_membro('seu@email.com', 'R Host');
+   select public.adicionar_membro('email.do.socio@email.com', 'L Host');
+   ```
+5. **Authentication → Sign In / Providers**: confira que **Allow new users to sign up** está desligado.
+6. O aviso de "senha vazada" pode ser ignorado: essa proteção só existe no plano Pro. Use senhas fortes nas duas contas.
 
-### C. Cloudflare Pages (o site do painel)
-1. <https://dash.cloudflare.com> → **Workers & Pages** → **Create** → **Pages** → **Connect to Git** → repositório **Painel-Woods**.
-2. Configuração:
-   - Production branch: `main`
-   - Root directory: `web`
-   - Build command: `npm run build`
-   - Build output directory: `dist`
-   - Variáveis: `VITE_SUPABASE_URL` = Project URL · `VITE_SUPABASE_ANON_KEY` = chave pública · `NODE_VERSION` = `22`
-3. **Save and Deploy**. Anote o endereço (`https://woods-web….pages.dev`).
-4. De volta ao Supabase: **Authentication** → **URL Configuration** → **Site URL** = esse endereço.
+## 3. Instalar a 1.2.0
 
-### D. Conectar o Painel Woods
-Painel Woods → **Configurações** → cartão **Woods Web** → URL, chave pública, e-mail e senha → **Conectar**.
-Em até 1 minuto os leads aparecem no endereço do Cloudflare.
+1. No PC de casa: `npm run lancar` (gera o instalador e cria o release `v1.2.0` como rascunho no GitHub; precisa do
+   `gh` logado). Sem o `gh`: `npm run dist` e crie o release **v1.2.0** à mão em **GitHub → Releases**, anexando
+   `dist\Painel-Woods-Setup-1.2.0.exe` e `dist\latest.yml`. Publique o release.
+2. **PC de casa primeiro**: instale o `Painel-Woods-Setup-1.2.0.exe` (se o Windows avisar: **Mais informações →
+   Executar assim mesmo**). Abra e espere o cartão **Sincronização entre computadores** ficar "em dia".
+3. **Notebook 1**: instale, faça os passos 1 a 5 das Configurações e conecte o **Woods Web** com a mesma conta. Espere "em dia".
+4. **Notebook 2**: o mesmo.
+5. **PC do sócio**: instale e conecte o Woods Web com a conta dele.
 
-### E. Conferir
-- [ ] Endereço do Cloudflare numa janela anônima mostra só o login.
-- [ ] Entrando, a visão geral mostra os seus leads e "Desktop conectado".
-- [ ] O detalhe de um lead mostra os prints.
-- [ ] No celular, o mesmo endereço funciona.
+Daqui em diante as versões novas chegam sozinhas: o app baixa em segundo plano e mostra "Versão x pronta" na barra lateral.
 
-## Depois, no dia a dia
-- Nada muda no uso do Painel Woods. Com o app aberto, ele sincroniza sozinho a cada minuto.
-- Sem internet, os envios esperam e seguem quando a conexão volta (cartão Woods Web mostra os pendentes).
-- Se o Supabase avisar que o projeto foi **pausado** (7 dias sem uso no plano grátis): clique em **Restore**.
-- Trocou a senha do Woods Web? Conecte o app de novo (o cartão mostra "sessão expirada").
-- Não use o Woods Web para publicar sites de clientes: eles continuam pelo fluxo do WOODS.
+## 4. Woods Web no Cloudflare
+
+1. Confira que a build do Cloudflare rodou sozinha depois do merge no `main` e terminou sem erro.
+2. Abra o Woods Web e confira que aparecem os quatro computadores em **PCs da equipe**.
+
+## 5. Arrumar
+
+1. Apague as branches que já entraram: `app-electron`, `equipe-woods-web`, `sincronia-total`, `teste-push-claude` e `integracao`.
+2. Apague o projeto `woods-web-teste` no Supabase, ou deixe pausado.
+
+## Como saber que chegou a 100%
+
+Com os quatro computadores ligados:
+
+- [ ] Lead criado no PC de casa aparece no notebook em até 2 minutos, com ficha, sites, prints e a conversa.
+- [ ] O Claude continua a conversa desse lead no notebook de onde parou.
+- [ ] Com o Claude rodando num lead no PC de casa, o notebook não consegue começar nesse lead.
+- [ ] No PC do sócio, um lead seu mostra **Não permitido** no chat (e um dele, no seu).
+- [ ] O mesmo arquivo mudado em dois PCs sem internet gera o aviso de conflito e nada se perde.
+- [ ] O `main` do WOODS só muda com o push de um lead aprovado (nenhum deploy novo no Cloudflare por causa do espelho).
+- [ ] O sócio entra no Woods Web com a conta dele e vê os mesmos leads; **Meus leads** filtra os dele.
+- [ ] O Woods Web numa janela anônima mostra só o login; funciona no celular.
+- [ ] Ao publicar uma release 1.2.1 de teste, os quatro computadores recebem a atualização.
+
+## Se algo der errado
+
+- **O app 1.2.0 não sincroniza** ("O banco do Supabase está desatualizado" ou "não está em nenhuma equipe"): falta o
+  passo 2 (migration ou `adicionar_membro`).
+- **Um PC ficou com a versão antiga depois da migration**: ele não envia nada ao Woods Web até receber a 1.2.0.
+  Instale por cima; os dados em `%APPDATA%\PainelWoods` ficam.
+- **Chat "Não permitido" num lead seu**: o Responsável da ficha e o seu nome na equipe têm de ser iguais
+  (`adicionar_membro` de novo com o nome certo).

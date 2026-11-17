@@ -21,13 +21,17 @@ Painel Woods (seu PC)                Supabase (nuvem)                    Woods W
 
 | Enviado | Não enviado, nunca |
 |---|---|
-| Nome, slug, Instagram, cidade, responsável e nicho da ficha | Conversas com o Claude (`conversas/*.jsonl`) |
+| Nome, slug, Instagram, cidade, responsável e nicho da ficha | Chave da API cifrada (o cofre do Windows só abre no computador que a gravou) |
+| Conversas do painel e sessões do Claude de cada lead, compactadas, no bucket privado `conversas` (para continuar de outro computador; veja [sincronia.md](sincronia.md)). São de cada conta: o sócio não vê as suas | |
+| Preferências: modelo, nome e e-mail dos commits, permissões "Sempre" (de cada conta) | |
 | Status da ficha (`pesquisa`, `site pronto`, `aprovado`, `publicado`…) | Chave da API da Anthropic, login do Claude, credenciais do GitHub |
 | Se as variantes A e B já foram geradas | O resto da ficha (WhatsApp, endereço, observações, ligação) |
 | Links A e B da ficha (os endereços publicados) | Código dos sites, fotos dos clientes, `site.config.json` |
 | Link da pasta do lead no repositório WOODS do GitHub | Senha do Woods Web (só passa uma vez para entrar) |
 | Os 4 prints de revisão (`a-390`, `b-390`, `a-1440`, `b-1440`) | |
 | Eventos: criado, mudança de status, variante gerada, prints prontos, publicado, Claude começou/terminou | |
+| Quem está com o Claude em cada lead agora: a trava (nome na equipe e nome do PC) | |
+| Que um lead foi apagado do WOODS (ele some das listas; o histórico fica) | |
 
 ---
 
@@ -35,43 +39,82 @@ Painel Woods (seu PC)                Supabase (nuvem)                    Woods W
 
 1. Entre em <https://supabase.com> e crie uma conta (pode usar o GitHub).
 2. **New project**. Nome: `woods-web`. Crie uma senha forte para o banco e guarde num gerenciador de senhas
-   (ela não é usada pelo Woods Web, mas o Supabase pede). Região: **South America (São Paulo)**. Plano **Free**.
+   (ela não é usada pelo Woods Web, mas o Supabase pede). Região: a mais perto de você (o projeto atual está em
+   **East US**, `us-east-1`; para quatro computadores a diferença não pesa). Plano **Free**.
 3. Espere o projeto ficar pronto (1 a 2 minutos).
 
-## 2. Criar as tabelas (migration)
+## 2. Criar as tabelas (migrations)
 
-1. No menu da esquerda, abra **SQL Editor** → **New query**.
-2. Abra o arquivo [`supabase/migrations/20261115000000_woods_web.sql`](../supabase/migrations/20261115000000_woods_web.sql)
-   deste repositório, copie **todo** o conteúdo, cole no editor e clique em **Run**.
-3. Deve aparecer `Success. No rows returned`.
-4. Confira em **Table Editor**: existem `projetos`, `previas`, `eventos` e `dispositivos`, cada uma com o selo **RLS enabled**.
-5. Confira em **Storage**: existe o bucket `previas`, **privado** (sem o selo "Public").
+São três arquivos, rodados **nesta ordem**, cada um numa query nova do **SQL Editor** (menu da esquerda → **New query**):
 
-> Quem usa a Supabase CLI pode, em vez disso, rodar `supabase link` e `supabase db push` na raiz do repositório.
+1. [`supabase/migrations/20261115000000_woods_web.sql`](../supabase/migrations/20261115000000_woods_web.sql): copie
+   **todo** o conteúdo, cole no editor e clique em **Run**. Deve aparecer `Success. No rows returned`.
+2. [`supabase/migrations/20261116000000_sincronia_total.sql`](../supabase/migrations/20261116000000_sincronia_total.sql): a mesma coisa.
+3. [`supabase/migrations/20261117000000_integracao.sql`](../supabase/migrations/20261117000000_integracao.sql): a mesma coisa.
+4. Confira em **Table Editor**: existem `projetos`, `previas`, `eventos`, `dispositivos`, `travas`, `conversas`,
+   `preferencias`, `equipes` e `membros`, cada uma com o selo **RLS enabled**.
+5. Confira em **Storage**: existem os buckets `previas` e `conversas`, **privados** (sem o selo "Public").
 
-O que a migration cria:
-- `projetos`: um por lead, com chave única `(owner_id, slug)`. O slug é o identificador estável do lead no WOODS.
+> **Banco que já tem as duas primeiras (o de produção)?** Rode só a terceira, com o Painel Woods **fechado em todos
+> os computadores** e no mesmo dia em que instalar a versão 1.2.0: ela troca a chave dos projetos e a versão
+> antiga do app para de sincronizar. Quem já tem conta entra na equipe "Woods" e os dados ficam dela. Depois siga o
+> passo 3 para dar nome às contas. O Painel Woods 1.2.0 se ajusta sozinho na primeira sincronização (reenvia os
+> prints para a pasta da equipe); não precisa reconectar.
+
+> **Supabase CLI**: as migrations do projeto atual foram rodadas pelo SQL Editor e não estão no histórico da CLI.
+> Antes de qualquer `supabase db push`, marque as que já rodaram, senão a CLI tenta rodá-las de novo:
+> `supabase migration repair --status applied 20261115000000 20261116000000` (e `20261117000000` depois da integração).
+
+O que as migrations criam:
+- `equipes` e `membros`: a equipe (você e o sócio). Os dados são da equipe, e cada um entra com o próprio login.
+- `projetos`: um por lead, com chave única `(equipe_id, slug)`. O slug é o identificador estável do lead no WOODS.
+  `owner_id` é quem enviou a versão atual.
 - `previas`: os 4 prints de cada projeto, apontando para o arquivo no bucket.
 - `eventos`: histórico. O id vem do desktop e é sempre o mesmo para o mesmo acontecimento, então reenviar não duplica.
-- `dispositivos`: o Painel Woods conectado, último contato, última sincronização e envios pendentes.
-- **RLS em tudo**: cada tabela só deixa ler, criar, alterar e apagar linhas com `owner_id = auth.uid()`.
-  O papel `anon` (quem não entrou) não acessa nada. As imagens ficam em `previas/<id-do-usuário>/<slug>/` e
-  só o dono lê ou envia.
+- `dispositivos`: cada Painel Woods conectado (o seu PC e o do sócio), último contato, última sincronização e envios pendentes.
+- `travas`: qual computador está com o Claude em cada lead agora, e de quem. É da equipe: um lead em uso num PC
+  bloqueia os outros, inclusive o do sócio. O banco só aceita a trava de quem é o **Responsável** do lead
+  (`membros.nome` igual a `projetos.responsavel`), então o sócio não põe o Claude num lead seu, nem que a tela deixe.
+- `conversas` e `preferencias`: de cada conta (cada um só vê as próprias). Veja [sincronia.md](sincronia.md).
+- **Trava contra versão velha** (gatilho `recusar_versao_velha`): um PC com o WOODS desatualizado não volta o status
+  nem troca os prints que o outro já enviou (o banco ignora a versão com data mais antiga).
+- **RLS em tudo**: cada tabela só deixa ler e alterar linhas da equipe de quem entrou, e só em nome próprio.
+  O papel `anon` (quem não entrou) não acessa nada. As imagens ficam em `previas/<id-da-equipe>/<slug>/` e
+  só a equipe lê ou envia.
 
-## 3. Criar a sua conta (a única)
+## 3. Criar as contas (você e o sócio)
+
+Cada um tem o próprio login. Não dividam a senha.
 
 1. **Authentication** → **Users** → **Add user** → **Create new user**.
 2. Seu e-mail e uma senha forte. Marque **Auto Confirm User**. **Create user**.
+3. Repita para o e-mail do sócio (ele troca a senha depois em **Esqueci a senha**, ou você manda a senha por um canal seguro).
+4. Ponha os dois na equipe, no **SQL Editor**. O nome é o mesmo usado em **Responsável** nas fichas:
+   ```sql
+   select public.adicionar_membro('seu@email.com', 'R Host');
+   select public.adicionar_membro('email.do.socio@email.com', 'L Host');
+   ```
+   Deve aparecer `… está na equipe Woods` para cada um. Rodar de novo só troca o nome.
+   **O nome é obrigatório**: é por ele que o Painel Woods sabe quais leads são seus. Conta sem nome não consegue
+   pôr o Claude em lead que já tem responsável.
+
+Conta que não está em nenhuma equipe não consegue conectar o Painel Woods e não vê nada no Woods Web.
+Ninguém consegue se colocar numa equipe pelo site: só pelo SQL Editor do Supabase.
+
+### Proteção contra senha vazada
+
+O Supabase avisa que a proteção contra senha vazada está desligada. Ela só existe no plano Pro: ignore o aviso e use
+senhas fortes (de um gerenciador de senhas) nas duas contas.
 
 ### Fechar o cadastro para mais ninguém
 
-Depois de criar a sua conta:
+Depois de criar as contas:
 
 1. **Authentication** → **Sign In / Providers** (em versões antigas: **Providers** ou **Settings**).
 2. Desligue **Allow new users to sign up** e salve.
 3. Deixe o provedor **Email** ligado (é ele que permite entrar com e-mail e senha).
 
-Mesmo que alguém conseguisse criar uma conta, o RLS só mostraria a essa pessoa as linhas dela (nenhuma).
+Mesmo que alguém conseguisse criar uma conta, ela não estaria em nenhuma equipe e o RLS não mostraria nada.
 Fechar o cadastro é a segunda tranca.
 
 ## 4. Pegar a URL e a chave pública
@@ -98,9 +141,9 @@ Não é obrigatório para entrar com senha, mas deixa os e-mails do Supabase (tr
 ## 6. Conectar o Painel Woods
 
 1. Abra o Painel Woods → **Configurações** (ícone ao lado de "Claude livre").
-2. No cartão **Woods Web (opcional)**, preencha:
+2. No cartão **Woods Web**, preencha:
    - **URL do projeto Supabase** e **Chave pública** (passo 4);
-   - **E-mail** e **Senha** da sua conta (passo 3).
+   - **E-mail** e **Senha** da sua conta (passo 3). No PC do sócio, a conta dele.
 3. **Conectar**.
 
 O app entra no Supabase, guarda **só o token de renovação**, cifrado pelo Windows (DPAPI, o mesmo cofre da chave
@@ -113,12 +156,24 @@ No cartão aparecem: conta conectada, última sincronização, envios pendentes 
 
 ## Como a sincronização funciona
 
-- A cada **1 minuto** (e 3 segundos depois de o Claude começar ou terminar um trabalho) o serviço lê as fichas
+- A cada **1 minuto** (e logo depois de o Claude começar ou terminar um trabalho) o serviço lê as fichas
   do WOODS, compara com a última foto e põe na fila só o que mudou.
+- **Datas pelo git**: ficha ou print igual ao último commit usa a data desse commit, e não a do arquivo (um clone
+  novo ou um pull mudam a data do arquivo sem mudar o conteúdo). Mudança ainda sem commit usa a data do arquivo.
+  A data de criação é o primeiro commit da ficha. É assim que o banco sabe qual dos dois PCs tem a versão mais nova.
+- **Cada lead é do seu Responsável**: com o Woods Web conectado, o Claude só trabalha nos leads em que você é o
+  responsável. No lead do sócio, o chat mostra **Não permitido** (campo e botões desligados, nada é enviado), e vale o
+  mesmo para ele nos seus. Para passar um lead, troque o Responsável na ficha. Entre os seus computadores vale a trava.
+- **Em andamento**: antes de o Claude começar num lead, o Painel Woods trava o lead. O Woods Web mostra
+  "L Host com o Claude no PC-L" e nenhum outro computador começa nesse lead. Ao terminar, parar ou fechar o app, a
+  trava sai. PC desligado no meio: ela vence sozinha depois de 10 minutos sem renovar.
+- **Lead novo**: se o slug já existe na equipe, o Painel Woods avisa antes de criar. Sem internet, segue sem perguntar.
 - A fila fica em `%APPDATA%\PainelWoods\nuvem-estado.json`. **Sem internet ou com o Supabase fora**, nada se perde:
   as tentativas se espaçam (30 s, 1 min, 2 min… até 30 min) e o envio volta sozinho. Quando o PC acorda da suspensão,
   ele tenta na hora. O Painel Woods funciona normalmente o tempo todo.
-- Tudo é **upsert** pela chave `(dono, slug)`: reenviar nunca cria linha repetida.
+- Tudo é **upsert** pela chave `(equipe, slug)`: reenviar nunca cria linha repetida.
+- Lead apagado do WOODS aparece como removido (some das listas). Se sumirem muitos de uma vez (pasta trocada,
+  outro ramo), nada é marcado, por segurança.
 - Dado recusado pelo banco (não deveria acontecer) é tentado algumas vezes e depois descartado; o projeto aparece no
   Woods Web como **problema de sincronização**, com a mensagem.
 - Um print só é enviado de novo quando o arquivo muda.
@@ -128,7 +183,7 @@ Arquivos no computador (`%APPDATA%\PainelWoods`):
 
 | Arquivo | Conteúdo |
 |---|---|
-| `nuvem.json` | URL, chave pública, e-mail, id da conta e do aparelho, token de renovação **cifrado** |
+| `nuvem.json` | URL, chave pública, e-mail, id da conta, da equipe e do aparelho, nome na equipe, token de renovação **cifrado** |
 | `nuvem-estado.json` | Fila pendente, última foto de cada lead, prints já enviados, última sincronização |
 | `logs\painel-*.log` | Erros da sincronização (sem tokens nem senha) |
 
@@ -154,7 +209,11 @@ contra um Supabase falso, sem rede.
 | Sintoma | O que fazer |
 |---|---|
 | Woods Web mostra "sem configuração" | Faltam as variáveis no Cloudflare Pages. Cadastre e faça um novo deploy. |
-| "As tabelas não existem no Supabase" | Rode a migration (passo 2). |
+| "O banco do Supabase está desatualizado" | Rode as migrations que faltam (passo 2). |
+| Painel Woods: "Esta conta não está em nenhuma equipe" | Rode `select public.adicionar_membro('e-mail', 'Nome');` no SQL Editor (passo 3). |
+| O botão "Meus leads" não aparece | Sua conta está sem nome na equipe. Rode `adicionar_membro` de novo com o nome. |
+| Chat do lead mostra "Não permitido" | O lead é de outro responsável. Se é seu, confira o Responsável na ficha e o seu nome na equipe (`adicionar_membro`, passo 3): os dois têm de ser iguais. |
+| O status de um lead voltou para trás | Não deveria acontecer: o banco ignora a versão mais velha. Confira se os dois PCs estão com o WOODS atualizado e se a ficha foi commitada. |
 | "E-mail ou senha incorretos" | Confira o usuário em Authentication → Users. Para trocar a senha: **…** → Send password recovery, ou apague e crie de novo. |
 | Painel Woods: "Essa é a chave service_role" | Copie a chave **anon**/**publishable**, não a secreta. |
 | Desktop "sem contato" no Woods Web | O Painel Woods está fechado, sem internet, ou foi desconectado. Abra as configurações do app e veja o cartão Woods Web. |

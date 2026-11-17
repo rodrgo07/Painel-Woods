@@ -212,6 +212,15 @@ i.fase-perdido { background: var(--perdido); }
 .integracao-mini { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 12px; background: var(--sup); border: 1px solid var(--borda); font-size: 12.5px; color: var(--texto-2); }
 .integracao-mini span { display: flex; flex-direction: column; line-height: 1.3; }
 .integracao-mini small { color: var(--suave); font-size: 11.5px; }
+.pcs { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; gap: 8px; }
+.pcs li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--texto); }
+.pcs small { margin-left: auto; color: var(--suave); font-size: 12px; }
+/* Claude trabalhando num lead agora: ponto pulsando */
+.chip.trabalhando { height: 22px; font-size: 11px; margin-left: 8px; color: var(--pub); border-color: rgba(87, 201, 143, .35); background: rgba(87, 201, 143, .08); }
+.chip.trabalhando i { width: 7px; height: 7px; border-radius: 50%; background: var(--pub); animation: pulsar 1.6s ease-in-out infinite; }
+.chips .chip.trabalhando { margin-left: 0; }
+@keyframes pulsar { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .chip.trabalhando i { animation: none; } }
 
 /* ---------- Avisos e estados ---------- */
 .aviso { border: 1px dashed var(--borda-forte); border-radius: var(--raio); padding: 30px 26px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }

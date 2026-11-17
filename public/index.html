@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' painel://site data:; frame-src painel://site; base-uri 'none'; form-action 'none'">
   <title>Painel Woods</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238e1b1b'/%3E%3Cpath d='M7 10l3.5 12L16 12l5.5 10L25 10' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23a81f27'/%3E%3Cpath d='M7 10l3.5 12L16 12l5.5 10L25 10' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,27 +14,31 @@
       <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M7 10l3.5 12L16 12l5.5 10L25 10"/></svg>
       <span>Woods</span>
     </a>
-    <a class="btn primario largo" href="#/novo">
+    <input id="busca" type="search" placeholder="Buscar lead" aria-label="Buscar lead">
+    <a class="nav-item" href="#/novo">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Novo lead
     </a>
-    <input id="busca" type="search" placeholder="Buscar lead" aria-label="Buscar lead">
+    <div class="rotulo"><span>Leads</span><span id="conta"></span></div>
     <nav id="lista" aria-label="Leads"></nav>
     <a id="aviso" class="aviso" href="#/config" hidden></a>
+    <button id="nova-versao" class="aviso nova-versao" type="button" hidden></button>
     <footer class="rodape">
       <span id="claude-status" class="claude-status">Claude livre</span>
-      <a class="icone" href="#/config" aria-label="Configurações" title="Configurações">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2.5"/><circle cx="9" cy="12" r="2.5"/><circle cx="17" cy="18" r="2.5"/></svg>
+      <a class="nav-item" href="#/config">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2.5"/><circle cx="9" cy="12" r="2.5"/><circle cx="17" cy="18" r="2.5"/></svg>Configurações
       </a>
     </footer>
   </aside>
 
   <main>
-    <section id="tela-config" class="tela-config" hidden>
-      <div class="config">
-        <header>
+    <section id="tela-config" class="tela" hidden>
+      <header class="topo">
+        <div class="titulo">
           <h1 id="config-titulo">Configurações</h1>
           <p id="config-sub" class="suave"></p>
-        </header>
+        </div>
+      </header>
+      <div class="rolagem"><div class="config">
 
         <div id="progresso" class="progresso" role="status" hidden>
           <strong id="prog-titulo"></strong>
@@ -95,9 +99,31 @@
           <div class="botoes"><button class="btn" type="submit">Salvar</button></div>
         </form>
 
+        <form class="cartao" id="p-resp">
+          <h2>Responsáveis</h2>
+          <p class="suave">Quem pode ser responsável por um lead. Use os mesmos nomes da equipe no Woods Web, para o filtro "Meus leads" funcionar.</p>
+          <label>Nomes, separados por vírgula<input id="c-resp" required placeholder="R Host, L Host"></label>
+          <div class="botoes"><button class="btn" type="submit">Salvar</button></div>
+        </form>
+        <article class="cartao passo" id="p-sincronia">
+          <h2>Sincronização entre computadores <span class="situacao"></span></h2>
+          <p class="suave">A pasta do WOODS (inclusive o trabalho ainda sem commit) vai e volta pelo GitHub a cada minuto e quando o Claude termina, numa área que não é branch: nada vai ao ar sem o push do lead aprovado. Conversas, sessões do Claude e preferências vão pelo Woods Web, logo abaixo.</p>
+          <ul id="sincronia-info" class="checagens"></ul>
+          <div class="botoes">
+            <button class="btn" type="button" data-sincronia="espelhoSincronizar">Sincronizar agora</button>
+          </div>
+          <div id="sincronia-conflito" hidden>
+            <p class="suave">O mesmo arquivo mudou aqui e em outro computador. Escolha qual versão fica. A outra não se perde: fica guardada no histórico do git.</p>
+            <div class="botoes">
+              <button class="btn primario" type="button" data-sincronia="espelhoResolver" data-lado="local">Ficar com a deste computador</button>
+              <button class="btn" type="button" data-sincronia="espelhoResolver" data-lado="nuvem">Ficar com a do outro computador</button>
+            </div>
+          </div>
+        </article>
+
         <article class="cartao passo" id="p-nuvem">
-          <h2>Woods Web (opcional) <span class="situacao"></span></h2>
-          <p class="suave">Envia os dados dos leads (sem as conversas) para o painel online no Supabase, para consultar de qualquer lugar.</p>
+          <h2>Woods Web <span class="situacao"></span></h2>
+          <p class="suave">Conecte a mesma conta nos seus computadores (o sócio usa a dele). Vão para o Supabase privado da equipe: os dados dos leads (para o painel online), as suas conversas e sessões do Claude (para continuar de qualquer computador seu), as suas preferências e qual computador está trabalhando em cada lead.</p>
           <ul id="nuvem-info" class="checagens"></ul>
           <form id="form-nuvem">
             <label>URL do projeto Supabase<input id="n-url" required placeholder="https://xxxx.supabase.co" autocomplete="off"></label>
@@ -123,28 +149,30 @@
         </article>
 
         <a id="config-pronto" class="btn primario largo" href="#/novo">Abrir o painel</a>
-      </div>
+      </div></div>
     </section>
 
-    <section id="tela-novo" class="tela-novo" hidden>
+    <section id="tela-novo" class="tela" hidden>
+      <header class="topo"><div class="titulo"><h1>Novo lead</h1></div></header>
+      <div class="rolagem">
       <form id="form-novo" class="cartao" autocomplete="off">
-        <h1>Novo lead</h1>
         <p class="suave">Mande o nome e o Instagram. O Claude pesquisa o Google e o Instagram, monta as variantes A e B e gera os prints para aprovação.</p>
         <label>Nome do negócio<input name="nome" required placeholder="Recanto Pet"></label>
         <label>Instagram<input name="instagram" required placeholder="@recantopet ou link do perfil"></label>
         <div class="linha">
           <label>Cidade<input name="cidade" placeholder="Jundiaí"></label>
           <label>Responsável
-            <select name="responsavel"><option>R Host</option><option>L Host</option></select>
+            <select name="responsavel"></select>
           </label>
         </div>
         <label>Slug<input name="slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="recanto-pet" title="Minúsculas, sem acento, com hífen"></label>
         <label><span>Observações <span class="suave">(opcional)</span></span><textarea name="obs" rows="3" placeholder="Link do Google Meu Negócio, serviço em destaque, algo a evitar…"></textarea></label>
         <button class="btn primario largo" type="submit">Criar e gerar sites</button>
       </form>
+      </div>
     </section>
 
-    <section id="tela-lead" class="tela-lead" hidden>
+    <section id="tela-lead" class="tela" hidden>
       <header class="topo">
         <div class="titulo">
           <h1 id="lead-nome"></h1>
@@ -191,6 +219,9 @@
           <form id="enviar" class="enviar">
             <textarea id="msg" rows="2" placeholder="Peça um ajuste ou responda o Claude…" aria-label="Mensagem para o Claude"></textarea>
             <div class="enviar-acoes">
+              <button id="escolher" class="icone" type="button" aria-pressed="false" title="Escolher um elemento do site (Esc cancela)" aria-label="Escolher um elemento do site">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M4 15v4a1 1 0 0 0 1 1h4M11 11l9 3.5-4 1.5-1.5 4z"/></svg>
+              </button>
               <button id="parar" class="btn" type="button" hidden>Parar</button>
               <button id="mandar" class="btn primario" type="submit">Enviar</button>
             </div>

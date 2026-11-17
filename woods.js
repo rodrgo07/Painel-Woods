@@ -127,6 +127,12 @@ export async function novidades(dir, o) {
   return Number((await rodar(o.git, ['rev-list', '--count', 'HEAD..@{u}'], { ...o, cwd: dir })).trim()) || 0;
 }
 
+/** As novidades do GitHub mexem nas dependências (aí precisa do npm ci, que fica para o botão Atualizar) */
+export async function mudaDependencias(dir, o) {
+  const r = await rodar(o.git, ['diff', '--name-only', 'HEAD', '@{u}', '--', 'package.json', 'package-lock.json'], { ...o, cwd: dir });
+  return Boolean(r.trim());
+}
+
 /** Puxa as novidades só avançando (ff-only): se bater com trabalho local, o git recusa e nada muda */
 export async function atualizar(dir, o) {
   const g = (...a) => rodar(o.git, a, { ...o, cwd: dir });

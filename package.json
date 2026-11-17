@@ -1,7 +1,7 @@
 {
   "name": "woods-painel",
   "productName": "Painel Woods",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Painel do WOODS: cria leads e gera as variantes A e B com o Claude",
   "author": "Woods",
@@ -12,14 +12,16 @@
     "start": "electron .",
     "test": "node --test \"test/*.test.js\"",
     "ferramentas": "node scripts/ferramentas.js",
-    "dist": "node scripts/ferramentas.js && electron-builder --win --x64"
+    "dist": "node scripts/ferramentas.js && electron-builder --win --x64 --publish never",
+    "lancar": "node scripts/lancar.js"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.319",
-    "@playwright/mcp": "0.0.85"
+    "@playwright/mcp": "0.0.85",
+    "electron-updater": "^6.8.11"
   },
   "devDependencies": {
     "electron": "45.2.3",
@@ -81,6 +83,11 @@
     },
     "portable": {
       "artifactName": "Painel-Woods-${version}-portable.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "rodrgo07",
+      "repo": "Painel-Woods"
     }
   }
 }

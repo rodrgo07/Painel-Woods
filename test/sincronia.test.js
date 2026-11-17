@@ -4,11 +4,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { lerProjeto, lerProjetos, paraLinha, eventos, eventoDaConversa, instagram, repositorio, idEstavel } from '../sincronia/mapa.js';
+import { spawnSync } from 'node:child_process';
+import { lerProjeto, lerProjetos, paraLinha, eventos, eventoDaConversa, instagram, repositorio, idEstavel, criarDatasGit } from '../sincronia/mapa.js';
 import { Fila, espera, ESPERA_MIN, ESPERA_MAX, MAX_TENTATIVAS, lerJson } from '../sincronia/fila.js';
 import { conferirConfig } from '../sincronia/supabase.js';
 import { criarServico } from '../sincronia/servico.js';
 import { limpar } from '../nucleo.js';
+import { supabaseFalso, UID, SOCIO, EQ, ANON } from './supabase-falso.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'nuvem-teste-'));
 const escrever = (base, arq, conteudo = 'x') => {
@@ -43,7 +45,6 @@ function woodsFalso() {
   return w;
 }
 const prints = (w, ...nomes) => nomes.forEach((n) => escrever(w, `sites/lima-pet-salon/prints/${n}.jpg`, `jpg-${n}`));
-const ANON = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ role: 'anon' })).toString('base64url')}.assinatura`;
 const SERVICE = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url')}.assinatura`;
 
 // ---------- Mapeamento ----------
@@ -154,56 +155,13 @@ test('conferirConfig: só a chave pública e URL https', () => {
 });
 
 // ---------- Serviço com um Supabase falso ----------
-const UID = '11111111-1111-4111-8111-111111111111';
-function supabaseFalso() {
-  const s = { tabelas: { projetos: new Map(), eventos: new Map(), previas: new Map(), dispositivos: new Map() }, arquivos: new Map(), pedidos: [],
-    offline: false, falha500: false, renovacoes: 0, tokenValido: 'acesso-1', renovacaoValida: 'renova-1', recusarProjeto: false };
-  const resposta = (status, corpo) => new Response(corpo === undefined ? null : JSON.stringify(corpo), { status });
-  s.fetch = async (url, { method, headers, body }) => {
-    if (s.offline) throw new TypeError('fetch failed');
-    const u = new URL(url);
-    s.pedidos.push(`${method} ${u.pathname}`);
-    assert.equal(headers.apikey, ANON, 'sempre a chave pública');
-    if (u.pathname === '/auth/v1/token') {
-      const d = JSON.parse(body);
-      if (u.searchParams.get('grant_type') === 'password') {
-        if (d.password !== 'senha-certa') return resposta(400, { error: 'invalid_grant', error_description: 'Invalid login credentials' });
-      } else if (d.refresh_token !== s.renovacaoValida) return resposta(400, { error: 'invalid_grant', error_description: 'Invalid Refresh Token' });
-      s.renovacoes += 1;
-      s.tokenValido = `acesso-${s.renovacoes + 1}`;
-      s.renovacaoValida = `renova-${s.renovacoes + 1}`;
-      return resposta(200, { access_token: s.tokenValido, refresh_token: s.renovacaoValida, expires_in: 3600, user: { id: UID, email: 'eu@woods.com' } });
-    }
-    if (headers.Authorization !== `Bearer ${s.tokenValido}`) return resposta(401, { message: 'JWT expired' });
-    if (s.falha500) return resposta(503, { message: 'indisponível' });
-    if (u.pathname === '/auth/v1/logout') return resposta(204);
-    if (u.pathname.startsWith('/storage/v1/object/previas/')) {
-      s.arquivos.set(decodeURIComponent(u.pathname.slice('/storage/v1/object/previas/'.length)), String(body));
-      return resposta(200, { Key: 'ok' });
-    }
-    const tabela = u.pathname.replace('/rest/v1/', '');
-    const chaves = (u.searchParams.get('on_conflict') || 'id').split(',');
-    if (tabela === 'projetos' && s.recusarProjeto) return resposta(400, { code: '23514', message: 'violates check constraint' });
-    for (const linha of JSON.parse(body)) {
-      assert.equal(linha.owner_id, UID);
-      if (tabela !== 'projetos' && tabela !== 'dispositivos' && !s.tabelas.projetos.has(`${UID},${linha.projeto_slug}`)) {
-        return resposta(409, { code: '23503', message: 'foreign key' });
-      }
-      const k = chaves.map((c) => linha[c]).join(',');
-      const ignorar = headers.Prefer.includes('ignore');
-      if (!(ignorar && s.tabelas[tabela].has(k))) s.tabelas[tabela].set(k, { ...s.tabelas[tabela].get(k), ...linha });
-    }
-    return resposta(201);
-  };
-  return s;
-}
 const cofreFalso = { disponivel: () => true, cifrar: (t) => Buffer.from(`cifrado:${t}`).toString('base64'), decifrar: (b) => Buffer.from(b, 'base64').toString().replace(/^cifrado:/, '') };
 
-function montar({ woods = woodsFalso(), dados = tmp(), sb = supabaseFalso(), relogio = { t: Date.UTC(2026, 10, 15) } } = {}) {
-  const servico = criarServico({ dados, woods, fetch: sb.fetch, cofre: cofreFalso, versao: '1.0.0', maquina: 'PC', agora: () => relogio.t });
+function montar({ woods = woodsFalso(), dados = tmp(), sb = supabaseFalso(), relogio = { t: Date.UTC(2026, 10, 15) }, git = null, maquina = 'PC' } = {}) {
+  const servico = criarServico({ dados, woods, fetch: sb.fetch, cofre: cofreFalso, git, versao: '1.0.0', maquina, agora: () => relogio.t, claude: tmp() });
   return { servico, sb, woods, dados, relogio };
 }
-const conectar = (s) => s.conectar({ url: 'https://abc.supabase.co', anonKey: ANON, email: 'eu@woods.com', senha: 'senha-certa' });
+const conectar = (s, email = 'eu@woods.com') => s.conectar({ url: 'https://abc.supabase.co', anonKey: ANON, email, senha: 'senha-certa' });
 
 test('conectar: senha errada não grava nada; certa guarda só o token cifrado', async () => {
   const { servico, dados } = montar();
@@ -230,25 +188,26 @@ test('sincronização inicial e repetida: tudo uma vez, sem duplicar', async () 
   await conectar(servico);
   await servico.sincronizar();
   assert.equal(sb.tabelas.projetos.size, 1);
-  const p = sb.tabelas.projetos.get(`${UID},lima-pet-salon`);
+  const p = sb.tabelas.projetos.get(`${EQ},lima-pet-salon`);
   assert.equal(p.status, 'pesquisa');
   assert.equal(p.prints, undefined);
   assert.deepEqual([...sb.tabelas.eventos.values()].map((e) => e.tipo), ['importado']);
   assert.equal(sb.tabelas.previas.size, 4);
-  assert.equal(sb.arquivos.get(`${UID}/lima-pet-salon/a-390.jpg`), 'jpg-a-390');
+  assert.equal(sb.arquivos.get(`${EQ}/lima-pet-salon/a-390.jpg`), 'jpg-a-390');
   assert.equal(sb.tabelas.dispositivos.size, 1);
   assert.equal(servico.situacao().pendentes, 0);
   assert.ok(servico.situacao().ultimaSincronia);
 
-  const antes = sb.pedidos.length;
+  const escritas = () => sb.pedidos.filter((p) => !p.startsWith('GET ')).length;
+  const antes = escritas();
   await servico.sincronizar();
-  assert.equal(sb.pedidos.length, antes, 'nada mudou: nenhum pedido novo');
+  assert.equal(escritas(), antes, 'nada mudou: nada é enviado (só a consulta das conversas)');
 
   // Mudança de status no WOODS: uma linha atualizada e um evento
   escrever(woods, 'vault/20-leads/lima-pet-salon.md', ficha({ status: 'publicado', linkA: 'https://lima-pet-salon-a.pages.dev/' }));
   await servico.sincronizar();
   assert.equal(sb.tabelas.projetos.size, 1, 'upsert: mesma linha');
-  assert.equal(sb.tabelas.projetos.get(`${UID},lima-pet-salon`).url_a, 'https://lima-pet-salon-a.pages.dev/');
+  assert.equal(sb.tabelas.projetos.get(`${EQ},lima-pet-salon`).url_a, 'https://lima-pet-salon-a.pages.dev/');
   assert.deepEqual([...sb.tabelas.eventos.values()].map((e) => e.tipo).sort(), ['importado', 'publicado', 'status']);
 });
 
@@ -278,7 +237,7 @@ test('sem internet: o app segue, a fila espera no disco e envia quando a conexã
   const s = await um.servico.sincronizar(); // não lança
   assert.equal(s.pendentes, 2, 'projeto e evento de status na fila');
   assert.match(s.ultimoErro, /Sem conexão/);
-  assert.equal(sb.tabelas.projetos.get(`${UID},lima-pet-salon`).status, 'pesquisa');
+  assert.equal(sb.tabelas.projetos.get(`${EQ},lima-pet-salon`).status, 'pesquisa');
 
   // O app fecha e abre de novo, ainda sem rede: a fila continua lá
   const dois = montar({ dados, woods, sb, relogio });
@@ -290,7 +249,7 @@ test('sem internet: o app segue, a fila espera no disco e envia quando a conexã
   await dois.servico.sincronizar();
   assert.equal(dois.servico.situacao().pendentes, 0);
   assert.equal(dois.servico.situacao().ultimoErro, '');
-  assert.equal(sb.tabelas.projetos.get(`${UID},lima-pet-salon`).status, 'site pronto');
+  assert.equal(sb.tabelas.projetos.get(`${EQ},lima-pet-salon`).status, 'site pronto');
   assert.ok([...sb.tabelas.eventos.values()].some((e) => e.tipo === 'status'));
 });
 
@@ -309,13 +268,13 @@ test('Supabase fora (503) é temporário; dado recusado (400) vira problema de s
   escrever(woods, 'vault/20-leads/lima-pet-salon.md', ficha({ cidade: 'Barueri' }));
   prints(woods, 'a-390');
   await servico.sincronizar();
-  assert.ok(sb.tabelas.previas.has(`${UID},lima-pet-salon,a-390`), 'o resto da fila seguiu');
+  assert.ok(sb.tabelas.previas.has(`${EQ},lima-pet-salon,a-390`), 'o resto da fila seguiu');
   for (let i = 0; i < 12; i++) { relogio.t += ESPERA_MAX; await servico.sincronizar(); }
   assert.equal(servico.situacao().pendentes, 0, 'desistiu do erro permanente');
   sb.recusarProjeto = false;
   escrever(woods, 'vault/20-leads/lima-pet-salon.md', ficha({ cidade: 'Carapicuíba' }));
   await servico.sincronizar();
-  assert.equal(sb.tabelas.projetos.get(`${UID},lima-pet-salon`).cidade, 'Carapicuíba');
+  assert.equal(sb.tabelas.projetos.get(`${EQ},lima-pet-salon`).cidade, 'Carapicuíba');
 });
 
 test('sessão: token vencido renova sozinho; renovação recusada pede para conectar de novo', async () => {
@@ -325,10 +284,10 @@ test('sessão: token vencido renova sozinho; renovação recusada pede para cone
   relogio.t += 2 * 3600_000; // o token de acesso venceu
   escrever(woods, 'vault/20-leads/lima-pet-salon.md', ficha({ status: 'aprovado' }));
   await servico.sincronizar();
-  assert.equal(sb.tabelas.projetos.get(`${UID},lima-pet-salon`).status, 'aprovado');
-  assert.ok(cofreFalso.decifrar(lerJson(path.join(dados, 'nuvem.json'), {}).renovacao) === sb.renovacaoValida, 'guarda o token de renovação novo');
+  assert.equal(sb.tabelas.projetos.get(`${EQ},lima-pet-salon`).status, 'aprovado');
+  assert.ok(cofreFalso.decifrar(lerJson(path.join(dados, 'nuvem.json'), {}).renovacao) === sb.renovacoes_validas.get(UID), 'guarda o token de renovação novo');
 
-  sb.renovacaoValida = 'revogado';
+  sb.renovacoes_validas.set(UID, 'revogado');
   relogio.t += 2 * 3600_000;
   escrever(woods, 'vault/20-leads/lima-pet-salon.md', ficha({ status: 'ligado' }));
   const s = await servico.sincronizar();
@@ -351,4 +310,157 @@ test('evento da conversa: lead novo entra antes do evento, e desconectado nada �
   assert.deepEqual(tipos.sort(), ['criado', 'trabalho_concluido', 'trabalho_iniciado']);
   assert.ok(![...sb.tabelas.eventos.values()].some((e) => JSON.stringify(e).includes('conteúdo da conversa')));
   servico.parar();
+});
+
+// ---------- Equipe: você e o sócio ----------
+/** git de mentira: a ficha e os prints do lead commitados em `data`, sem mudança local */
+const gitFalso = (data, { sujos = [] } = {}) => (args) => {
+  if (args[0] === 'rev-parse') return `head-${data}\n`;
+  if (args.includes('log')) {
+    const arqs = ['vault/20-leads/lima-pet-salon.md', ...['a-390', 'b-390', 'a-1440', 'b-1440'].map((n) => `sites/lima-pet-salon/prints/${n}.jpg`)];
+    return `\0${data}\n\n${arqs.join('\n')}\n`;
+  }
+  if (args.includes('status')) return sujos.map((f) => ` M ${f}\0`).join('');
+  throw new Error(`git ${args.join(' ')}`);
+};
+
+test('equipe: o sócio vê o que você enviou, e o WOODS atrasado dele não volta o status', async () => {
+  const sb = supabaseFalso();
+  const relogio = { t: Date.UTC(2026, 10, 15) };
+  const woodsEu = woodsFalso();
+  escrever(woodsEu, 'vault/20-leads/lima-pet-salon.md', ficha({ status: 'site pronto' }));
+  prints(woodsEu, 'a-390');
+  const woodsSocio = woodsFalso(); // clone feito agora, mas sem o meu último commit
+  prints(woodsSocio, 'a-390');
+  escrever(woodsSocio, 'sites/lima-pet-salon/prints/a-390.jpg', 'print-velho');
+  const eu = montar({ woods: woodsEu, sb, relogio, git: gitFalso('2026-11-12T10:00:00-03:00'), maquina: 'PC-R' });
+  const socio = montar({ woods: woodsSocio, sb, relogio, git: gitFalso('2026-11-08T10:00:00-03:00'), maquina: 'PC-L' });
+
+  await conectar(eu.servico);
+  await eu.servico.sincronizar();
+  const s = await conectar(socio.servico, 'socio@woods.com');
+  assert.equal(s.nome, 'L Host', 'nome na equipe vem da tabela membros');
+  await socio.servico.sincronizar();
+
+  const p = sb.tabelas.projetos.get(`${EQ},lima-pet-salon`);
+  assert.equal(sb.tabelas.projetos.size, 1, 'um lead só para a equipe');
+  assert.equal(p.status, 'site pronto', 'a versão velha do sócio foi ignorada');
+  assert.equal(p.atualizado_local_em, '2026-11-12T13:00:00.000Z', 'a data é a do commit, não a do arquivo');
+  assert.equal(p.criado_local_em, '2026-11-12T13:00:00.000Z');
+  assert.equal(sb.arquivos.get(`${EQ}/lima-pet-salon/a-390.jpg`), 'jpg-a-390', 'o print velho do sócio não trocou o meu');
+  assert.equal(sb.tabelas.dispositivos.size, 2, 'os dois PCs aparecem');
+
+  // O sócio atualiza o WOODS e muda o lead: agora a versão dele é a mais nova
+  escrever(woodsSocio, 'vault/20-leads/lima-pet-salon.md', ficha({ status: 'aprovado' }));
+  const socio2 = montar({ woods: woodsSocio, sb, relogio, dados: socio.dados, git: gitFalso('2026-11-14T10:00:00-03:00'), maquina: 'PC-L' });
+  await socio2.servico.sincronizar();
+  assert.equal(sb.tabelas.projetos.get(`${EQ},lima-pet-salon`).status, 'aprovado');
+  assert.equal(sb.tabelas.projetos.get(`${EQ},lima-pet-salon`).owner_id, SOCIO, 'owner_id = quem enviou por último');
+});
+
+test('mudança local ainda sem commit usa a data do arquivo', () => {
+  const w = woodsFalso();
+  const quando = criarDatasGit(gitFalso('2026-11-01T00:00:00Z', { sujos: ['vault/20-leads/lima-pet-salon.md'] }))();
+  const p = lerProjeto(w, 'lima-pet-salon', undefined, quando);
+  assert.notEqual(p.atualizado_local_em, '2026-11-01T00:00:00.000Z');
+  assert.equal(p.criado_local_em, '2026-11-01T00:00:00.000Z', 'criação continua sendo o primeiro commit');
+});
+
+test('trava da equipe: cada lead é do seu responsável; o sócio vê quem está trabalhando e não toma o lead', async () => {
+  const sb = supabaseFalso();
+  const relogio = { t: Date.UTC(2026, 10, 15, 12) };
+  const woods = woodsFalso(); // lima-pet-salon, responsável R Host
+  const eu = montar({ woods, sb, relogio, maquina: 'PC-R' });
+  const socio = montar({ woods: woodsFalso(), sb, relogio, maquina: 'PC-L' });
+  await conectar(eu.servico);
+  await conectar(socio.servico, 'socio@woods.com');
+  await eu.servico.sincronizar();
+  await socio.servico.sincronizar();
+
+  const livre = await socio.servico.consultar('lima-pet-salon');
+  assert.deepEqual(livre, { projeto: { responsavel: 'R Host', status: 'pesquisa' }, trava: null });
+  assert.deepEqual(await socio.servico.consultar('nao-existe'), { projeto: null, trava: null });
+
+  // O sócio não trava o lead que é meu: o banco recusa, mesmo que a tela deixe passar
+  await assert.rejects(socio.servico.antesDoClaude('lima-pet-salon'), /Não permitido/);
+  assert.equal(sb.tabelas.travas.size, 0);
+  // Lead novo, ainda fora do banco: quem cria trava
+  await socio.servico.antesDoClaude('lead-do-socio');
+  assert.equal(sb.tabelas.travas.get(`${EQ},lead-do-socio`).quem, 'L Host');
+  await socio.servico.depoisDoClaude('lead-do-socio');
+  assert.equal(sb.tabelas.travas.size, 0, 'terminou: solta');
+
+  // Eu travo o meu lead: o sócio vê quem e onde (o Woods Web mostra o mesmo)
+  await eu.servico.antesDoClaude('lima-pet-salon');
+  const tr = sb.tabelas.travas.get(`${EQ},lima-pet-salon`);
+  assert.equal(tr.owner_id, UID);
+  assert.equal(tr.quem, 'R Host');
+  assert.deepEqual((await socio.servico.consultar('lima-pet-salon')).trava, { quem: 'R Host', computador: 'PC-R', desde: new Date(relogio.t).toISOString() });
+  assert.equal((await eu.servico.consultar('lima-pet-salon')).trava, null, 'o meu próprio trabalho não me avisa');
+
+  // PC fechado à força: a trava vence em 10 min sem renovar; ao abrir de novo, o app solta o que ficou
+  relogio.t += 11 * 60_000;
+  assert.equal((await socio.servico.consultar('lima-pet-salon')).trava, null);
+  const eu2 = montar({ woods, sb, relogio, dados: eu.dados, maquina: 'PC-R' });
+  eu2.servico.iniciar();
+  await eu2.servico.sincronizar();
+  eu2.servico.parar();
+  assert.equal(sb.tabelas.travas.size, 0);
+  assert.equal(sb.tabelas.andamento, undefined, 'não existe mais a tabela andamento');
+});
+
+test('lead apagado do WOODS some do painel; muitos sumindo de uma vez não apaga nada', async () => {
+  const { servico, sb, woods } = montar();
+  for (const n of ['b', 'c', 'd', 'e', 'f']) escrever(woods, `vault/20-leads/pet-${n}.md`, ficha());
+  await conectar(servico);
+  await servico.sincronizar();
+  fs.rmSync(path.join(woods, 'vault/20-leads/pet-b.md'));
+  await servico.sincronizar();
+  assert.ok(sb.tabelas.projetos.get(`${EQ},pet-b`).removido_em, 'marcado como removido');
+  assert.equal(sb.tabelas.projetos.get(`${EQ},pet-c`).removido_em, null);
+  escrever(woods, 'vault/20-leads/pet-b.md', ficha({ status: 'aprovado' }));
+  await servico.sincronizar();
+  assert.equal(sb.tabelas.projetos.get(`${EQ},pet-b`).removido_em, null, 'voltou: aparece de novo');
+
+  fs.rmSync(path.join(woods, 'vault/20-leads'), { recursive: true });
+  await servico.sincronizar();
+  assert.ok([...sb.tabelas.projetos.values()].every((p) => !p.removido_em), 'pasta sumiu: não marca nada');
+});
+
+test('conta fora de qualquer equipe não conecta; conexão antiga descobre a equipe sozinha', async () => {
+  const sb = supabaseFalso();
+  sb.membros = sb.membros.filter((m) => m.usuario_id !== SOCIO);
+  const a = montar({ sb });
+  await assert.rejects(conectar(a.servico, 'socio@woods.com'), /nenhuma equipe/);
+  assert.equal(fs.existsSync(path.join(a.dados, 'nuvem.json')), false);
+
+  // Painel conectado antes desta versão: nuvem.json sem equipe
+  const b = montar({ sb });
+  await conectar(b.servico);
+  await b.servico.sincronizar();
+  const arq = path.join(b.dados, 'nuvem.json');
+  fs.writeFileSync(arq, JSON.stringify({ ...JSON.parse(fs.readFileSync(arq, 'utf8')), equipeId: '' }));
+  sb.tabelas.projetos.clear();
+  const c = montar({ sb, woods: b.woods, dados: b.dados });
+  await c.servico.sincronizar();
+  assert.equal(sb.tabelas.projetos.size, 1, 'reenviou para a equipe');
+  assert.equal(c.servico.situacao().equipe, true);
+});
+
+test('criarDatasGit com o git de verdade', { skip: spawnSync('git', ['--version']).status !== 0 && 'sem git nesta máquina' }, () => {
+  const w = woodsFalso();
+  fs.rmSync(path.join(w, '.git'), { recursive: true });
+  const g = (...a) => spawnSync('git', a, { cwd: w, encoding: 'utf8', env: { ...process.env, GIT_COMMITTER_DATE: '2026-11-01T12:00:00Z', GIT_AUTHOR_DATE: '2026-11-01T12:00:00Z' } });
+  g('init', '-q'); g('add', '.'); g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'um');
+  escrever(w, 'vault/20-leads/lima-pet-salon.md', ficha({ status: 'aprovado' }));
+  const env2 = { ...process.env, GIT_COMMITTER_DATE: '2026-11-05T12:00:00Z', GIT_AUTHOR_DATE: '2026-11-05T12:00:00Z' };
+  spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'dois'], { cwd: w, env: env2 });
+  const git = (args) => spawnSync('git', args, { cwd: w, encoding: 'utf8' }).stdout;
+  const ler = criarDatasGit(git);
+  let p = lerProjeto(w, 'lima-pet-salon', undefined, ler());
+  assert.equal(p.atualizado_local_em, '2026-11-05T12:00:00.000Z');
+  assert.equal(p.criado_local_em, '2026-11-01T12:00:00.000Z');
+  escrever(w, 'vault/20-leads/lima-pet-salon.md', ficha({ status: 'publicado' }));
+  p = lerProjeto(w, 'lima-pet-salon', undefined, ler());
+  assert.ok(Date.parse(p.atualizado_local_em) > Date.parse('2026-11-10'), 'mudou sem commit: data do arquivo');
 });
